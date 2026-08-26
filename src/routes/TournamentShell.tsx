@@ -59,7 +59,7 @@ export default function TournamentShell() {
           </p>
           <h1>{tournament.name}</h1>
         </div>
-        {isOrganizer && tournament.status === "setup" && (
+        {isOrganizer && tournament.status !== "active" && (
           <div>
             <button type="button" className="btn btn--danger btn--sm" onClick={removeTournament}>
               Eliminar torneo

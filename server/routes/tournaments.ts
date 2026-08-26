@@ -65,10 +65,10 @@ router.delete("/tournaments/:id", requireAuth, (req, res) => {
     | { status: string }
     | undefined;
   if (!row) return res.status(404).json({ error: "tournament not found" });
-  if (row.status !== "setup") {
+  if (row.status === "active") {
     return res
       .status(409)
-      .json({ error: "no se puede eliminar un torneo que ya empezó a jugarse" });
+      .json({ error: "no se puede eliminar un torneo mientras está en curso" });
   }
   db.prepare("DELETE FROM tournaments WHERE id = ?").run(req.params.id);
   res.status(204).end();
