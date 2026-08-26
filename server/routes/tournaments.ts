@@ -69,11 +69,10 @@ router.delete("/tournaments/:id", requireAuth, (req, res) => {
     | { status: string }
     | undefined;
   if (!row) return res.status(404).json({ error: "tournament not found" });
-  if (row.status === "active") {
-    return res
-      .status(409)
-      .json({ error: "no se puede eliminar un torneo mientras está en curso" });
-  }
+  // Se puede borrar en cualquier estado, incluso en curso: si no, un torneo de prueba
+  // que ya arrancó queda imposible de limpiar. La protección contra el borrado
+  // accidental vive en la confirmación reforzada de la UI (ver TournamentShell.tsx),
+  // no en una guarda de servidor que dejaba datos huérfanos sin salida.
   db.prepare("DELETE FROM tournaments WHERE id = ?").run(req.params.id);
   res.status(204).end();
 });

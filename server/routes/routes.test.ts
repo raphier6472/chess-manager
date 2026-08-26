@@ -50,6 +50,49 @@ async function seedTournament(agent: ReturnType<typeof request.agent>, name: str
   return tournamentId;
 }
 
+describe("eliminar torneo", () => {
+  it("se puede eliminar en cualquier estado, incluso en curso", async () => {
+    const agent = await organizer();
+
+    // sin empezar
+    const setupId = await seedTournament(agent, "Del sin empezar");
+    expect((await agent.delete(`/api/tournaments/${setupId}`)).status).toBe(204);
+    expect((await request(app).get(`/api/tournaments/${setupId}`)).status).toBe(404);
+
+    // en curso: antes devolvía 409 y dejaba el torneo imposible de limpiar
+    const activeId = await seedTournament(agent, "Del en curso");
+    await agent.post(`/api/tournaments/${activeId}/rounds/generate`);
+    expect((await request(app).get(`/api/tournaments/${activeId}`)).body.status).toBe("active");
+    expect((await agent.delete(`/api/tournaments/${activeId}`)).status).toBe(204);
+    expect((await request(app).get(`/api/tournaments/${activeId}`)).status).toBe(404);
+
+    // terminado
+    const doneId = await seedTournament(agent, "Del terminado");
+    const rnd = await agent.post(`/api/tournaments/${doneId}/rounds/generate`);
+    for (const m of rnd.body.matches) {
+      if (m.blackId) await agent.post(`/api/matches/${m.id}/result`).send({ result: "white" });
+    }
+    await agent.post(`/api/rounds/${rnd.body.id}/complete`);
+    expect((await agent.delete(`/api/tournaments/${doneId}`)).status).toBe(204);
+    expect((await request(app).get(`/api/tournaments/${doneId}`)).status).toBe(404);
+  });
+
+  it("borrar un torneo se lleva sus jugadores, rondas y partidas", async () => {
+    const agent = await organizer();
+    const tid = await seedTournament(agent, "Del cascada");
+    await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+
+    expect((await request(app).get(`/api/tournaments/${tid}/players`)).body.length).toBeGreaterThan(0);
+    expect((await request(app).get(`/api/tournaments/${tid}/rounds`)).body.length).toBeGreaterThan(0);
+
+    expect((await agent.delete(`/api/tournaments/${tid}`)).status).toBe(204);
+
+    // Sin cascada correcta quedarían filas huérfanas apuntando a un torneo inexistente.
+    expect((await request(app).get(`/api/tournaments/${tid}/players`)).body).toEqual([]);
+    expect((await request(app).get(`/api/tournaments/${tid}/rounds`)).body).toEqual([]);
+  });
+});
+
 describe("autorización", () => {
   it("rechaza escrituras sin sesión", async () => {
     const anon = request(app);
