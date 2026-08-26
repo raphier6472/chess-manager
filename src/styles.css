@@ -19,13 +19,15 @@
   --line-strong: #14181c;
   --live: #0f8a6a;
   --live-soft: #e6f4ef;
+  --live-hover: #0c6f56;
   --signal: #ff5a1f;
   --signal-strong: #e04a14;
   --signal-soft: #fff0e8;
-  --white-piece: #ffffff;
-  --white-piece-line: #b9ae95;
   --black-piece: #14181c;
   --danger: #c8371c;
+  --danger-soft: #fbebe7;
+  --badge-neutral-bg: #eef0f1;
+  --badge-neutral-ink: #6b7278;
 
   --font-display: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
   --font-body: "IBM Plex Sans", system-ui, sans-serif;
@@ -35,6 +37,51 @@
   --radius-sm: 6px;
   --shadow-card: 0 1px 2px rgba(20, 24, 28, 0.04), 0 1px 0 rgba(20, 24, 28, 0.03);
   color-scheme: light;
+}
+
+/* Dark mode: same graphite/signal identity, inverted surfaces. The header
+   bar is already near-black in light mode, so it stays constant across
+   both themes — only the page canvas (cards, tables, forms) inverts. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14171a;
+    --surface: #1c1f23;
+    --ink: #edf0f1;
+    --ink-soft: #98a2ac;
+    --line: #2b3035;
+    --line-strong: #edf0f1;
+    --live: #22b78e;
+    --live-soft: #12332a;
+    --live-hover: #34cca2;
+    --signal: #ff6a38;
+    --signal-strong: #ff8a5c;
+    --signal-soft: #3a2015;
+    --danger: #ff6b52;
+    --danger-soft: #3a1712;
+    --badge-neutral-bg: #24282c;
+    --badge-neutral-ink: #9aa4ac;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #14171a;
+  --surface: #1c1f23;
+  --ink: #edf0f1;
+  --ink-soft: #98a2ac;
+  --line: #2b3035;
+  --line-strong: #edf0f1;
+  --live: #22b78e;
+  --live-soft: #12332a;
+  --live-hover: #34cca2;
+  --signal: #ff6a38;
+  --signal-strong: #ff8a5c;
+  --signal-soft: #3a2015;
+  --danger: #ff6b52;
+  --danger-soft: #3a1712;
+  --badge-neutral-bg: #24282c;
+  --badge-neutral-ink: #9aa4ac;
+  color-scheme: dark;
 }
 
 * {
@@ -132,6 +179,20 @@ button {
   border-color: var(--board-light);
 }
 
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn--sm.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  line-height: 1;
+}
+
 .app-main {
   flex: 1;
   width: 100%;
@@ -196,7 +257,7 @@ button {
   color: var(--live-soft);
 }
 .btn--felt:hover:not(:disabled) {
-  background: #0c6f56;
+  background: var(--live-hover);
 }
 
 .btn--ghost {
@@ -215,7 +276,7 @@ button {
 }
 .btn--danger:hover:not(:disabled) {
   border-color: var(--danger);
-  background: #fbebe7;
+  background: var(--danger-soft);
 }
 
 .btn--sm {
@@ -240,7 +301,8 @@ button {
 .field input,
 .field select {
   font-family: var(--font-body);
-  font-size: 0.9rem;
+  /* 16px: below this, iOS/Android auto-zoom the page on focus. */
+  font-size: 1rem;
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -337,8 +399,8 @@ button {
 }
 
 .badge--completed {
-  background: #eef0f1;
-  color: #6b7278;
+  background: var(--badge-neutral-bg);
+  color: var(--badge-neutral-ink);
 }
 
 /* ---------- Tabs ---------- */
@@ -366,6 +428,11 @@ button {
 }
 
 /* ---------- Tables ---------- */
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 table.data {
   width: 100%;
@@ -411,7 +478,7 @@ table.data tr.rank-1 td:first-child {
 
 table.data td input {
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: 1rem;
   padding: 0.3rem 0.55rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -530,6 +597,44 @@ table.data td input:focus {
 .result-picker button.selected {
   background: var(--signal);
   color: #ffffff;
+}
+
+/* Narrow screens: the result-picker doesn't leave enough room for both
+   names in one row, so stack number+white / picker / black into 3 rows. */
+@media (max-width: 480px) {
+  .board-row:not(.board-row--bye) {
+    grid-template-columns: 2.2rem 1fr;
+    grid-template-rows: auto auto auto;
+    row-gap: 0.6rem;
+  }
+
+  .board-row:not(.board-row--bye) .board-row__number {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .board-row:not(.board-row--bye) .board-row__player {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .board-row:not(.board-row--bye) .result-picker {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+
+  .board-row:not(.board-row--bye) .result-picker button {
+    flex: 1;
+  }
+
+  .board-row:not(.board-row--bye) .board-row__player--black {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-content: flex-start;
+    flex-direction: row;
+    text-align: left;
+  }
 }
 
 /* ---------- Misc ---------- */

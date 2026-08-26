@@ -109,6 +109,7 @@ export default function Players() {
       {players === null ? null : players.length === 0 ? (
         <p className="empty-state">Todavía no hay jugadores anotados.</p>
       ) : (
+        <div className="table-scroll">
         <table className="data">
           <thead>
             <tr>
@@ -179,6 +180,7 @@ export default function Players() {
             })}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

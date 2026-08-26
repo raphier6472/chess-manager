@@ -41,28 +41,30 @@ export default function Standings() {
         </div>
       )}
 
-      <table className="data">
-        <thead>
-          <tr>
-            <th className="num">#</th>
-            <th>Jugador</th>
-            <th className="num">Puntos</th>
-            <th className="num">Buchholz</th>
-            <th className="num">Sonneborn-Berger</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.playerId} className={i === 0 ? "rank-1" : ""}>
-              <td className="num">{i + 1}</td>
-              <td className="name">{r.name}</td>
-              <td className="num">{r.score}</td>
-              <td className="num">{r.buchholz}</td>
-              <td className="num">{r.sonnebornBerger}</td>
+      <div className="table-scroll">
+        <table className="data">
+          <thead>
+            <tr>
+              <th className="num">#</th>
+              <th>Jugador</th>
+              <th className="num">Puntos</th>
+              <th className="num">Buchholz</th>
+              <th className="num">Sonneborn-Berger</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.playerId} className={i === 0 ? "rank-1" : ""}>
+                <td className="num">{i + 1}</td>
+                <td className="name">{r.name}</td>
+                <td className="num">{r.score}</td>
+                <td className="num">{r.buchholz}</td>
+                <td className="num">{r.sonnebornBerger}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
