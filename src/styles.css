@@ -547,11 +547,23 @@ table.data td input:focus {
   background: var(--black-piece);
 }
 
+.board-row__player-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .board-row__name {
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.board-row__player-meta {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--ink-soft);
 }
 
 .board-row--bye {

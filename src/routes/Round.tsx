@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import { api, type RoundWithMatches } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { formatPlayerName, type Match, type Player } from "../types";
+import { formatPlayerName, type Match, type Player, type StandingsRow } from "../types";
 import type { TournamentContext } from "./TournamentShell";
 
 const RESULT_OPTIONS: Array<{ value: "white" | "draw" | "black"; label: string }> = [
@@ -11,22 +11,30 @@ const RESULT_OPTIONS: Array<{ value: "white" | "draw" | "black"; label: string }
   { value: "black", label: "0-1" },
 ];
 
+interface BoardPlayer {
+  name: string;
+  rating: number;
+  score: number;
+}
+
 export default function RoundPage() {
   const { isOrganizer } = useAuth();
   const { tournamentId } = useParams<{ tournamentId: string }>();
   const { tournament, reload: reloadTournament } = useOutletContext<TournamentContext>();
   const [rounds, setRounds] = useState<RoundWithMatches[] | null>(null);
   const [players, setPlayers] = useState<Player[] | null>(null);
+  const [standings, setStandings] = useState<StandingsRow[] | null>(null);
   const [viewedNumber, setViewedNumber] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = () => {
     if (!tournamentId) return;
-    Promise.all([api.listRounds(tournamentId), api.listPlayers(tournamentId)]).then(
-      ([r, p]) => {
+    Promise.all([api.listRounds(tournamentId), api.listPlayers(tournamentId), api.getStandings(tournamentId)]).then(
+      ([r, p, s]) => {
         setRounds(r);
         setPlayers(p);
+        setStandings(s);
         setViewedNumber((current) => current ?? (r.length ? r[r.length - 1].number : null));
       },
       (e) => setError(e.message),
@@ -35,12 +43,18 @@ export default function RoundPage() {
 
   useEffect(load, [tournamentId]);
 
-  const nameOf = useMemo(() => {
-    const m = new Map((players ?? []).map((p) => [p.id, formatPlayerName(p)]));
-    return (id: string) => m.get(id) ?? "?";
-  }, [players]);
+  const infoOf = useMemo(() => {
+    const scoreById = new Map((standings ?? []).map((s) => [s.playerId, s.score]));
+    const m = new Map<string, BoardPlayer>(
+      (players ?? []).map((p) => [
+        p.id,
+        { name: formatPlayerName(p), rating: p.rating ?? 0, score: scoreById.get(p.id) ?? 0 },
+      ]),
+    );
+    return (id: string): BoardPlayer => m.get(id) ?? { name: "?", rating: 0, score: 0 };
+  }, [players, standings]);
 
-  if (!rounds || !players) return null;
+  if (!rounds || !players || !standings) return null;
 
   const latest = rounds[rounds.length - 1] ?? null;
   const viewed = rounds.find((r) => r.number === viewedNumber) ?? latest;
@@ -126,8 +140,8 @@ export default function RoundPage() {
                 key={m.id}
                 index={i + 1}
                 match={m}
-                whiteName={nameOf(m.whiteId)}
-                blackName={m.blackId ? nameOf(m.blackId) : null}
+                white={infoOf(m.whiteId)}
+                black={m.blackId ? infoOf(m.blackId) : null}
                 editable={isOrganizer && isLatest && viewed.status !== "completed"}
                 onSubmit={submitResult}
               />
@@ -167,23 +181,23 @@ export default function RoundPage() {
 function BoardRow({
   index,
   match,
-  whiteName,
-  blackName,
+  white,
+  black,
   editable,
   onSubmit,
 }: {
   index: number;
   match: Match;
-  whiteName: string;
-  blackName: string | null;
+  white: BoardPlayer;
+  black: BoardPlayer | null;
   editable: boolean;
   onSubmit: (matchId: string, result: "white" | "draw" | "black") => void;
 }) {
-  if (blackName === null) {
+  if (black === null) {
     return (
       <div className="card board-row board-row--bye">
         <span className="board-row__number">{index}</span>
-        <span className="board-row__name">{whiteName}</span>
+        <span className="board-row__name">{white.name}</span>
         <span className="board-row__bye-label">bye</span>
       </div>
     );
@@ -194,7 +208,12 @@ function BoardRow({
       <span className="board-row__number">{index}</span>
       <div className="board-row__player">
         <span className="piece-swatch piece-swatch--white" />
-        <span className="board-row__name">{whiteName}</span>
+        <div className="board-row__player-text">
+          <span className="board-row__name">{white.name}</span>
+          <span className="board-row__player-meta">
+            {white.rating} · {white.score} pts
+          </span>
+        </div>
       </div>
       <div className="result-picker">
         {RESULT_OPTIONS.map((opt) => (
@@ -211,7 +230,12 @@ function BoardRow({
       </div>
       <div className="board-row__player board-row__player--black">
         <span className="piece-swatch piece-swatch--black" />
-        <span className="board-row__name">{blackName}</span>
+        <div className="board-row__player-text">
+          <span className="board-row__name">{black.name}</span>
+          <span className="board-row__player-meta">
+            {black.rating} · {black.score} pts
+          </span>
+        </div>
       </div>
     </div>
   );
