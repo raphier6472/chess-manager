@@ -177,7 +177,7 @@ export default function RoundPage() {
               <button type="button" className="btn btn--primary" disabled={!allResultsIn || busy} onClick={completeRound}>
                 Cerrar ronda {viewed.number}
               </button>
-              {!allResultsIn && <p className="hint" style={{ marginTop: "0.5rem" }}>Cargá todos los resultados para poder cerrarla.</p>}
+              {!allResultsIn && <p className="hint" style={{ marginTop: "0.5rem" }}>Carga todos los resultados para poder cerrarla.</p>}
             </div>
           )}
 
@@ -187,7 +187,7 @@ export default function RoundPage() {
                 Reabrir ronda {viewed.number}
               </button>
               <p className="hint" style={{ marginTop: "0.5rem" }}>
-                Si cargaste mal un resultado, reabrí la ronda para corregirlo y volvé a cerrarla.
+                Si cargaste mal un resultado, reabre la ronda para corregirlo y vuelve a cerrarla.
               </p>
             </div>
           )}

@@ -67,7 +67,7 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
   if (existingRounds.length > 0) {
     const last = existingRounds[existingRounds.length - 1];
     if (last.status !== "completed") {
-      return res.status(409).json({ error: "primero tenés que cerrar la ronda anterior" });
+      return res.status(409).json({ error: "primero tienes que cerrar la ronda anterior" });
     }
   }
 
@@ -220,7 +220,7 @@ router.post("/rounds/:id/complete", requireAuth, (req, res) => {
   if (pending) {
     return res
       .status(409)
-      .json({ error: "cargá el resultado de todas las mesas antes de cerrar la ronda" });
+      .json({ error: "carga el resultado de todas las mesas antes de cerrar la ronda" });
   }
 
   const tournament = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(round.tournament_id) as

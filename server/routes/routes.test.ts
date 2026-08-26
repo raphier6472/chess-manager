@@ -217,10 +217,10 @@ describe("mensajes al organizador", () => {
     const rnd = await agent.post(`/api/tournaments/${t2id}/rounds/generate`);
 
     const sinCerrar = await agent.post(`/api/tournaments/${t2id}/rounds/generate`);
-    expect(sinCerrar.body.error).toBe("primero tenés que cerrar la ronda anterior");
+    expect(sinCerrar.body.error).toBe("primero tienes que cerrar la ronda anterior");
 
     const faltanResultados = await agent.post(`/api/rounds/${rnd.body.id}/complete`);
-    expect(faltanResultados.body.error).toBe("cargá el resultado de todas las mesas antes de cerrar la ronda");
+    expect(faltanResultados.body.error).toBe("carga el resultado de todas las mesas antes de cerrar la ronda");
   });
 });
 

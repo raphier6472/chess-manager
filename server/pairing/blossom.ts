@@ -1,7 +1,13 @@
 /**
  * Maximum weight matching in a general graph (Edmonds' Blossom algorithm,
- * primal-dual method). TypeScript port of networkx's `max_weight_matching`
- * (networkx/algorithms/matching.py, BSD-3-Clause), which is itself based on
+ * primal-dual method).
+ *
+ * Derived from NetworkX's `max_weight_matching` (networkx/algorithms/matching.py).
+ * Copyright (c) NetworkX Developers. Licensed under BSD-3-Clause; see
+ * https://github.com/networkx/networkx/blob/main/LICENSE.txt
+ * That license requires this notice to be retained — keep it if you copy this file.
+ *
+ * The original implementation is in turn based on
  * "Efficient Algorithms for Finding Maximum Matching in Graphs" by Zvi Galil,
  * ACM Computing Surveys, 1986, and Joris van Rantwijk's reference
  * implementation. Runs in O(V^3).

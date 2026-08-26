@@ -116,7 +116,7 @@ router.delete("/players/:id", requireAuth, (req, res) => {
     .get(player.tournament_id) as { status: string } | undefined;
   if (tournament && tournament.status !== "setup") {
     return res.status(409).json({
-      error: "no se puede quitar un jugador con el torneo empezado; retiralo en su lugar",
+      error: "no se puede quitar un jugador con el torneo empezado; retíralo en su lugar",
     });
   }
 

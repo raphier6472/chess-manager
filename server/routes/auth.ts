@@ -16,7 +16,7 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "demasiados intentos de acceso, probá de nuevo en unos minutos" },
+  message: { error: "demasiados intentos de acceso, prueba de nuevo en unos minutos" },
   // Cloudflare reescribe CF-Connecting-IP en cada request, así que un cliente no puede
   // falsearlo a través del túnel (a diferencia de X-Forwarded-For, que sí es del cliente).
   // Sin ese header — acceso directo al origen, o desarrollo local — todos los intentos
@@ -37,7 +37,7 @@ router.post("/auth/login", loginLimiter, (req, res) => {
   }
   const { password } = req.body ?? {};
   if (typeof password !== "string" || !password) {
-    return res.status(400).json({ error: "ingresá la contraseña" });
+    return res.status(400).json({ error: "ingresa la contraseña" });
   }
   if (!verifyPassword(password, storedHash)) {
     return res.status(401).json({ error: "contraseña incorrecta" });

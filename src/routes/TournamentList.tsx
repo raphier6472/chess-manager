@@ -51,7 +51,7 @@ export default function TournamentList() {
       {error && <p className="form-error">{error}</p>}
 
       {tournaments === null ? null : tournaments.length === 0 ? (
-        <p className="empty-state">Todavía no creaste ningún torneo.</p>
+        <p className="empty-state">Todavía no has creado ningún torneo.</p>
       ) : (
         <ul className="tournament-list">
           {tournaments.map((t) => (
