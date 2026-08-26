@@ -6,6 +6,21 @@ import { requireAuth } from "../middleware/auth";
 
 const router = Router();
 
+// El Elo se guarda en una columna INTEGER, pero SQLite es de tipado laxo: sin esta
+// validación entraban decimales y negativos (ej. -9999.5) tal cual.
+const MIN_RATING = 0;
+const MAX_RATING = 4000;
+
+/** null = sin Elo. Devuelve un mensaje de error si el valor es inválido. */
+function parseRating(raw: unknown): { value: number | null } | { error: string } {
+  if (raw === undefined || raw === null || raw === "") return { value: null };
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < MIN_RATING || value > MAX_RATING) {
+    return { error: `rating must be an integer between ${MIN_RATING} and ${MAX_RATING}` };
+  }
+  return { value };
+}
+
 interface PlayerRow {
   id: string;
   tournament_id: string;
@@ -44,10 +59,11 @@ router.post("/tournaments/:tournamentId/players", requireAuth, (req, res) => {
     return res.status(400).json({ error: "lastName is required" });
   }
   const firstNameValue = typeof firstName === "string" ? firstName.trim() : "";
-  const ratingValue = rating === undefined || rating === null || rating === "" ? null : Number(rating);
-  if (ratingValue !== null && !Number.isFinite(ratingValue)) {
-    return res.status(400).json({ error: "rating must be a number" });
+  const parsedRating = parseRating(rating);
+  if ("error" in parsedRating) {
+    return res.status(400).json({ error: parsedRating.error });
   }
+  const ratingValue = parsedRating.value;
 
   const id = nanoid();
   db.prepare(
@@ -64,6 +80,14 @@ router.patch("/players/:id", requireAuth, (req, res) => {
   if (!row) return res.status(404).json({ error: "player not found" });
 
   const { withdrawn, lastName, firstName, rating } = req.body ?? {};
+
+  // Validar antes de escribir nada: los updates son incrementales, así que un rating
+  // inválido al final dejaría el nombre ya modificado y la request igual fallando.
+  const parsedRating = rating === undefined ? null : parseRating(rating);
+  if (parsedRating && "error" in parsedRating) {
+    return res.status(400).json({ error: parsedRating.error });
+  }
+
   if (withdrawn !== undefined) {
     db.prepare("UPDATE players SET withdrawn = ? WHERE id = ?").run(withdrawn ? 1 : 0, row.id);
   }
@@ -73,9 +97,8 @@ router.patch("/players/:id", requireAuth, (req, res) => {
   if (typeof firstName === "string") {
     db.prepare("UPDATE players SET first_name = ? WHERE id = ?").run(firstName.trim(), row.id);
   }
-  if (rating !== undefined) {
-    const ratingValue = rating === null || rating === "" ? null : Number(rating);
-    db.prepare("UPDATE players SET rating = ? WHERE id = ?").run(ratingValue, row.id);
+  if (parsedRating) {
+    db.prepare("UPDATE players SET rating = ? WHERE id = ?").run(parsedRating.value, row.id);
   }
 
   const updated = db.prepare("SELECT * FROM players WHERE id = ?").get(row.id) as PlayerRow;

@@ -186,6 +186,17 @@ router.post("/matches/:id/result", requireAuth, (req, res) => {
   if (match.black_id === null) {
     return res.status(409).json({ error: "byes cannot have a result submitted" });
   }
+  // La UI deshabilita el picker en una ronda cerrada, pero eso es solo cosmético:
+  // sin esta guarda se puede reescribir el resultado (y dar vuelta el podio) de un
+  // torneo ya terminado, o corromper los puntajes que alimentaron rondas posteriores.
+  const round = db.prepare("SELECT status FROM rounds WHERE id = ?").get(match.round_id) as
+    | { status: string }
+    | undefined;
+  if (round?.status === "completed") {
+    return res
+      .status(409)
+      .json({ error: "no se puede cambiar el resultado de una ronda ya cerrada" });
+  }
   const { result } = req.body ?? {};
   if (!["white", "black", "draw"].includes(result)) {
     return res.status(400).json({ error: "result must be 'white', 'black' or 'draw'" });
@@ -200,6 +211,9 @@ router.post("/rounds/:id/complete", requireAuth, (req, res) => {
     | RoundRow
     | undefined;
   if (!round) return res.status(404).json({ error: "round not found" });
+  if (round.status === "completed") {
+    return res.status(409).json({ error: "la ronda ya está cerrada" });
+  }
 
   const matches = db.prepare("SELECT * FROM matches WHERE round_id = ?").all(round.id) as MatchRow[];
   const pending = matches.some((m) => m.result === "unplayed");

@@ -12,6 +12,17 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "too many login attempts, try again later" },
+  // Cloudflare reescribe CF-Connecting-IP en cada request, así que un cliente no puede
+  // falsearlo a través del túnel (a diferencia de X-Forwarded-For, que sí es del cliente).
+  // Sin ese header — acceso directo al origen, o desarrollo local — todos los intentos
+  // caen en un único bucket: falla cerrado, nunca abierto.
+  keyGenerator: (req) => {
+    const cfIp = req.headers["cf-connecting-ip"];
+    return typeof cfIp === "string" && cfIp ? cfIp : "shared-bucket";
+  },
+  // req.ip no se usa como clave, así que la validación de XFF de express-rate-limit
+  // (que asume rate-limiting por IP) no aplica.
+  validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
 });
 
 router.post("/auth/login", loginLimiter, (req, res) => {

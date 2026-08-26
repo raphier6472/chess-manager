@@ -7,6 +7,8 @@ import { requireAuth } from "../middleware/auth";
 
 const router = Router();
 
+const MAX_ROUNDS = 30;
+
 interface TournamentRow {
   id: string;
   name: string;
@@ -40,9 +42,11 @@ router.post("/tournaments", requireAuth, (req, res) => {
   if (typeof date !== "string" || !date.trim()) {
     return res.status(400).json({ error: "date is required" });
   }
+  // MAX_ROUNDS coincide con el max del input en TournamentList.tsx: sin cota el
+  // servidor aceptaba cualquier entero (ej. 999999999).
   const rounds = Number(numRounds);
-  if (!Number.isInteger(rounds) || rounds < 1) {
-    return res.status(400).json({ error: "numRounds must be a positive integer" });
+  if (!Number.isInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) {
+    return res.status(400).json({ error: `numRounds must be an integer between 1 and ${MAX_ROUNDS}` });
   }
   const id = nanoid();
   db.prepare(
