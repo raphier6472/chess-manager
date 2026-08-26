@@ -19,6 +19,45 @@ export interface PairingResult {
   bye: string | null;
 }
 
+export interface SeedPlayer {
+  id: string;
+  name: string;
+  rating: number | null;
+}
+
+/**
+ * Round-1 pairing: standard Swiss "fold" seeding (Harkness), the same
+ * method Swiss Manager/Vega use. Players are ranked by rating (unrated
+ * last), ties broken alphabetically, then the ranked list is split in half
+ * and player i of the top half is paired against player i of the bottom
+ * half (1 vs n/2+1, 2 vs n/2+2, ...). The top half plays white. If the
+ * field is odd, the lowest-ranked player gets the bye.
+ */
+export function generateInitialPairings(players: SeedPlayer[]): PairingResult {
+  if (players.length === 0) return { pairs: [], bye: null };
+  if (players.length === 1) return { pairs: [], bye: players[0].id };
+
+  const seeded = [...players].sort((a, b) => {
+    const ratingA = a.rating ?? -Infinity;
+    const ratingB = b.rating ?? -Infinity;
+    if (ratingA !== ratingB) return ratingB - ratingA;
+    return a.name.localeCompare(b.name, "es");
+  });
+
+  let bye: string | null = null;
+  if (seeded.length % 2 === 1) {
+    bye = seeded.pop()!.id;
+  }
+
+  const half = seeded.length / 2;
+  const pairs: PairingPair[] = [];
+  for (let i = 0; i < half; i++) {
+    pairs.push({ white: seeded[i].id, black: seeded[i + half].id });
+  }
+
+  return { pairs, bye };
+}
+
 // Weights are integers so the matching algorithm stays exact. Score-group
 // closeness dominates the weight; rematches and repeat byes are pushed to
 // the lowest possible positive weight so they're only used when there is no

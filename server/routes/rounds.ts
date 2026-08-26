@@ -2,7 +2,7 @@ import { Router } from "express";
 import { nanoid } from "nanoid";
 import { db } from "../db";
 import type { Match, Round } from "../../shared/types";
-import { generatePairings, type PairingPlayer } from "../pairing/pairing";
+import { generateInitialPairings, generatePairings, type PairingPair, type PairingPlayer } from "../pairing/pairing";
 import { requireAuth } from "../middleware/auth";
 
 const router = Router();
@@ -72,67 +72,75 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
   }
 
   const players = db
-    .prepare("SELECT id FROM players WHERE tournament_id = ? AND withdrawn = 0")
-    .all(tournamentId) as Array<{ id: string }>;
+    .prepare("SELECT id, name, rating FROM players WHERE tournament_id = ? AND withdrawn = 0")
+    .all(tournamentId) as Array<{ id: string; name: string; rating: number | null }>;
   if (players.length < 2) {
     return res.status(409).json({ error: "need at least 2 active players" });
   }
 
-  const matches = db
-    .prepare(
-      `SELECT m.white_id, m.black_id, m.result
-       FROM matches m JOIN rounds r ON r.id = m.round_id
-       WHERE r.tournament_id = ?`,
-    )
-    .all(tournamentId) as Array<{ white_id: string; black_id: string | null; result: string }>;
+  let pairs: PairingPair[];
+  let bye: string | null;
 
-  const scoreOf = new Map<string, number>();
-  const opponentsOf = new Map<string, Set<string>>();
-  const colorBalanceOf = new Map<string, number>();
-  const hadByeOf = new Map<string, boolean>();
-  for (const p of players) {
-    scoreOf.set(p.id, 0);
-    opponentsOf.set(p.id, new Set());
-    colorBalanceOf.set(p.id, 0);
-    hadByeOf.set(p.id, false);
+  if (existingRounds.length === 0) {
+    // Round 1: standard Swiss fold seeding by rating (see generateInitialPairings).
+    ({ pairs, bye } = generateInitialPairings(players));
+  } else {
+    const matches = db
+      .prepare(
+        `SELECT m.white_id, m.black_id, m.result
+         FROM matches m JOIN rounds r ON r.id = m.round_id
+         WHERE r.tournament_id = ?`,
+      )
+      .all(tournamentId) as Array<{ white_id: string; black_id: string | null; result: string }>;
+
+    const scoreOf = new Map<string, number>();
+    const opponentsOf = new Map<string, Set<string>>();
+    const colorBalanceOf = new Map<string, number>();
+    const hadByeOf = new Map<string, boolean>();
+    for (const p of players) {
+      scoreOf.set(p.id, 0);
+      opponentsOf.set(p.id, new Set());
+      colorBalanceOf.set(p.id, 0);
+      hadByeOf.set(p.id, false);
+    }
+    const addScore = (id: string, pts: number) => {
+      if (scoreOf.has(id)) scoreOf.set(id, scoreOf.get(id)! + pts);
+    };
+
+    for (const m of matches) {
+      if (m.black_id === null) {
+        if (hadByeOf.has(m.white_id)) hadByeOf.set(m.white_id, true);
+        addScore(m.white_id, 1);
+        continue;
+      }
+      opponentsOf.get(m.white_id)?.add(m.black_id);
+      opponentsOf.get(m.black_id)?.add(m.white_id);
+      if (colorBalanceOf.has(m.white_id)) {
+        colorBalanceOf.set(m.white_id, colorBalanceOf.get(m.white_id)! + 1);
+      }
+      if (colorBalanceOf.has(m.black_id)) {
+        colorBalanceOf.set(m.black_id, colorBalanceOf.get(m.black_id)! - 1);
+      }
+      if (m.result === "white") {
+        addScore(m.white_id, 1);
+      } else if (m.result === "black") {
+        addScore(m.black_id, 1);
+      } else if (m.result === "draw") {
+        addScore(m.white_id, 0.5);
+        addScore(m.black_id, 0.5);
+      }
+    }
+
+    const pairingPlayers: PairingPlayer[] = players.map((p) => ({
+      id: p.id,
+      score: scoreOf.get(p.id) ?? 0,
+      colorBalance: colorBalanceOf.get(p.id) ?? 0,
+      opponents: opponentsOf.get(p.id) ?? new Set(),
+      hadBye: hadByeOf.get(p.id) ?? false,
+    }));
+
+    ({ pairs, bye } = generatePairings(pairingPlayers));
   }
-  const addScore = (id: string, pts: number) => {
-    if (scoreOf.has(id)) scoreOf.set(id, scoreOf.get(id)! + pts);
-  };
-
-  for (const m of matches) {
-    if (m.black_id === null) {
-      if (hadByeOf.has(m.white_id)) hadByeOf.set(m.white_id, true);
-      addScore(m.white_id, 1);
-      continue;
-    }
-    opponentsOf.get(m.white_id)?.add(m.black_id);
-    opponentsOf.get(m.black_id)?.add(m.white_id);
-    if (colorBalanceOf.has(m.white_id)) {
-      colorBalanceOf.set(m.white_id, colorBalanceOf.get(m.white_id)! + 1);
-    }
-    if (colorBalanceOf.has(m.black_id)) {
-      colorBalanceOf.set(m.black_id, colorBalanceOf.get(m.black_id)! - 1);
-    }
-    if (m.result === "white") {
-      addScore(m.white_id, 1);
-    } else if (m.result === "black") {
-      addScore(m.black_id, 1);
-    } else if (m.result === "draw") {
-      addScore(m.white_id, 0.5);
-      addScore(m.black_id, 0.5);
-    }
-  }
-
-  const pairingPlayers: PairingPlayer[] = players.map((p) => ({
-    id: p.id,
-    score: scoreOf.get(p.id) ?? 0,
-    colorBalance: colorBalanceOf.get(p.id) ?? 0,
-    opponents: opponentsOf.get(p.id) ?? new Set(),
-    hadBye: hadByeOf.get(p.id) ?? false,
-  }));
-
-  const { pairs, bye } = generatePairings(pairingPlayers);
 
   const roundId = nanoid();
   const roundNumber = existingRounds.length + 1;

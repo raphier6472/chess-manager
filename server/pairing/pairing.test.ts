@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generatePairings, type PairingPlayer } from "./pairing";
+import { generateInitialPairings, generatePairings, type PairingPlayer, type SeedPlayer } from "./pairing";
 
 function player(
   id: string,
@@ -86,5 +86,51 @@ describe("generatePairings", () => {
     ];
     const { pairs } = generatePairings(players);
     expect(pairs).toEqual([{ white: "b", black: "a" }]);
+  });
+});
+
+function seed(id: string, name: string, rating: number | null): SeedPlayer {
+  return { id, name, rating };
+}
+
+describe("generateInitialPairings", () => {
+  it("splits an 8-player field in half by rating and pairs top vs bottom", () => {
+    const players = [
+      seed("p1", "A", 2200),
+      seed("p2", "B", 2100),
+      seed("p3", "C", 2000),
+      seed("p4", "D", 1900),
+      seed("p5", "E", 1800),
+      seed("p6", "F", 1700),
+      seed("p7", "G", 1600),
+      seed("p8", "H", 1500),
+    ];
+    const { pairs, bye } = generateInitialPairings(players);
+    expect(bye).toBeNull();
+    expect(pairs).toEqual([
+      { white: "p1", black: "p5" },
+      { white: "p2", black: "p6" },
+      { white: "p3", black: "p7" },
+      { white: "p4", black: "p8" },
+    ]);
+  });
+
+  it("breaks rating ties alphabetically", () => {
+    const players = [seed("p1", "Zeta", 1500), seed("p2", "Alfa", 1500), seed("p3", "Beta", 1500), seed("p4", "Gamma", 1500)];
+    const { pairs } = generateInitialPairings(players);
+    // Alphabetical order: Alfa, Beta, Gamma, Zeta -> top half [Alfa, Beta] vs bottom half [Gamma, Zeta]
+    expect(pairs).toEqual([
+      { white: "p2", black: "p4" },
+      { white: "p3", black: "p1" },
+    ]);
+  });
+
+  it("seeds unrated players below rated ones", () => {
+    const players = [seed("p1", "Unrated A", null), seed("p2", "Rated", 1200), seed("p3", "Unrated B", null)];
+    const { pairs, bye } = generateInitialPairings(players);
+    // Rated player is top-seeded; the two unrated players (alphabetical) fill the rest.
+    // Odd field of 3: lowest-ranked (Unrated B) gets the bye.
+    expect(bye).toBe("p3");
+    expect(pairs).toEqual([{ white: "p2", black: "p1" }]);
   });
 });
