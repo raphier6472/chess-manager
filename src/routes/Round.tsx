@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import { api, type RoundWithMatches } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { Match, Player } from "../types";
+import { formatPlayerName, type Match, type Player } from "../types";
 import type { TournamentContext } from "./TournamentShell";
 
 const RESULT_OPTIONS: Array<{ value: "white" | "draw" | "black"; label: string }> = [
@@ -36,7 +36,7 @@ export default function RoundPage() {
   useEffect(load, [tournamentId]);
 
   const nameOf = useMemo(() => {
-    const m = new Map((players ?? []).map((p) => [p.id, p.name]));
+    const m = new Map((players ?? []).map((p) => [p.id, formatPlayerName(p)]));
     return (id: string) => m.get(id) ?? "?";
   }, [players]);
 

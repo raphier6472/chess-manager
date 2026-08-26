@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { nanoid } from "nanoid";
 import { db } from "../db";
-import type { Tournament } from "../../shared/types";
+import { formatPlayerName, type Tournament } from "../../shared/types";
 import { computeStandings, type MatchOutcome } from "../scoring/tiebreaks";
 import { requireAuth } from "../middleware/auth";
 
@@ -79,9 +79,13 @@ router.get("/tournaments/:id/standings", (req, res) => {
   const tournament = db.prepare("SELECT id FROM tournaments WHERE id = ?").get(tournamentId);
   if (!tournament) return res.status(404).json({ error: "tournament not found" });
 
-  const players = db
-    .prepare("SELECT id, name FROM players WHERE tournament_id = ?")
-    .all(tournamentId) as Array<{ id: string; name: string }>;
+  const playerRows = db
+    .prepare("SELECT id, last_name, first_name FROM players WHERE tournament_id = ?")
+    .all(tournamentId) as Array<{ id: string; last_name: string; first_name: string }>;
+  const players = playerRows.map((p) => ({
+    id: p.id,
+    name: formatPlayerName({ lastName: p.last_name, firstName: p.first_name }),
+  }));
 
   const matches = db
     .prepare(

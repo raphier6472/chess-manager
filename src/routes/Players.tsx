@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import type { Player } from "../types";
+import { formatPlayerName, type Player } from "../types";
 import type { TournamentContext } from "./TournamentShell";
 
 export default function Players() {
@@ -11,10 +11,12 @@ export default function Players() {
   const { tournament } = useOutletContext<TournamentContext>();
   const [players, setPlayers] = useState<Player[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [rating, setRating] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const [editFirstName, setEditFirstName] = useState("");
   const [editRating, setEditRating] = useState("");
 
   const load = () => {
@@ -29,14 +31,16 @@ export default function Players() {
 
   const addPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tournamentId || !name.trim()) return;
+    if (!tournamentId || !lastName.trim()) return;
     setError(null);
     try {
       await api.addPlayer(tournamentId, {
-        name: name.trim(),
+        lastName: lastName.trim(),
+        firstName: firstName.trim(),
         rating: rating.trim() ? Number(rating) : null,
       });
-      setName("");
+      setLastName("");
+      setFirstName("");
       setRating("");
       load();
     } catch (err) {
@@ -52,18 +56,20 @@ export default function Players() {
   const startEdit = (p: Player) => {
     setError(null);
     setEditingId(p.id);
-    setEditName(p.name);
+    setEditLastName(p.lastName);
+    setEditFirstName(p.firstName);
     setEditRating(p.rating != null ? String(p.rating) : "");
   };
 
   const cancelEdit = () => setEditingId(null);
 
   const saveEdit = async (p: Player) => {
-    if (!editName.trim()) return;
+    if (!editLastName.trim()) return;
     setError(null);
     try {
       await api.updatePlayer(p.id, {
-        name: editName.trim(),
+        lastName: editLastName.trim(),
+        firstName: editFirstName.trim(),
         rating: editRating.trim() ? Number(editRating) : null,
       });
       setEditingId(null);
@@ -74,7 +80,7 @@ export default function Players() {
   };
 
   const remove = async (p: Player) => {
-    if (!confirm(`¿Quitar a ${p.name} del torneo?`)) return;
+    if (!confirm(`¿Quitar a ${formatPlayerName(p)} del torneo?`)) return;
     try {
       await api.deletePlayer(p.id);
       load();
@@ -90,9 +96,13 @@ export default function Players() {
       {isOrganizer && (
         <form className="card" style={{ padding: "1.1rem" }} onSubmit={addPlayer}>
           <div className="form-row">
-            <div className="field" style={{ flex: "2 1 220px" }}>
-              <label htmlFor="pname">Nombre</label>
-              <input id="pname" value={name} onChange={(e) => setName(e.target.value)} required />
+            <div className="field" style={{ flex: "1 1 180px" }}>
+              <label htmlFor="plastname">Apellido</label>
+              <input id="plastname" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+            </div>
+            <div className="field" style={{ flex: "1 1 180px" }}>
+              <label htmlFor="pfirstname">Nombre</label>
+              <input id="pfirstname" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
             </div>
             <div className="field" style={{ width: "7rem" }}>
               <label htmlFor="prating">Elo (opcional)</label>
@@ -110,76 +120,84 @@ export default function Players() {
         <p className="empty-state">Todavía no hay jugadores anotados.</p>
       ) : (
         <div className="table-scroll">
-        <table className="data">
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th className="num">Elo</th>
-              <th></th>
-              <th></th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {players.map((p) => {
-              const isEditing = editingId === p.id;
-              return (
-                <tr key={p.id} style={p.withdrawn && !isEditing ? { opacity: 0.5 } : undefined}>
-                  <td>
-                    {isEditing ? (
-                      <input value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus />
-                    ) : (
-                      p.name
-                    )}
-                  </td>
-                  <td className="num">
-                    {isEditing ? (
-                      <input
-                        type="number"
-                        value={editRating}
-                        onChange={(e) => setEditRating(e.target.value)}
-                        style={{ width: "5rem" }}
-                      />
-                    ) : (
-                      p.rating ?? 0
-                    )}
-                  </td>
-                  <td>
-                    {isOrganizer &&
-                      (isEditing ? (
-                        <button type="button" className="btn btn--felt btn--sm" onClick={() => saveEdit(p)}>
-                          Guardar
-                        </button>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Apellido</th>
+                <th>Nombre</th>
+                <th className="num">Elo</th>
+                <th></th>
+                <th></th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {players.map((p) => {
+                const isEditing = editingId === p.id;
+                return (
+                  <tr key={p.id} style={p.withdrawn && !isEditing ? { opacity: 0.5 } : undefined}>
+                    <td>
+                      {isEditing ? (
+                        <input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} autoFocus />
                       ) : (
-                        <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEdit(p)}>
-                          Editar
-                        </button>
-                      ))}
-                  </td>
-                  <td>
-                    {isOrganizer &&
-                      (isEditing ? (
-                        <button type="button" className="btn btn--ghost btn--sm" onClick={cancelEdit}>
-                          Cancelar
-                        </button>
+                        p.lastName
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
                       ) : (
-                        <button type="button" className="btn btn--ghost btn--sm" onClick={() => toggleWithdrawn(p)}>
-                          {p.withdrawn ? "Reincorporar" : "Retirar"}
+                        p.firstName
+                      )}
+                    </td>
+                    <td className="num">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={editRating}
+                          onChange={(e) => setEditRating(e.target.value)}
+                          style={{ width: "5rem" }}
+                        />
+                      ) : (
+                        p.rating ?? 0
+                      )}
+                    </td>
+                    <td>
+                      {isOrganizer &&
+                        (isEditing ? (
+                          <button type="button" className="btn btn--felt btn--sm" onClick={() => saveEdit(p)}>
+                            Guardar
+                          </button>
+                        ) : (
+                          <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEdit(p)}>
+                            Editar
+                          </button>
+                        ))}
+                    </td>
+                    <td>
+                      {isOrganizer &&
+                        (isEditing ? (
+                          <button type="button" className="btn btn--ghost btn--sm" onClick={cancelEdit}>
+                            Cancelar
+                          </button>
+                        ) : (
+                          <button type="button" className="btn btn--ghost btn--sm" onClick={() => toggleWithdrawn(p)}>
+                            {p.withdrawn ? "Reincorporar" : "Retirar"}
+                          </button>
+                        ))}
+                    </td>
+                    <td>
+                      {isOrganizer && !isEditing && canDelete && (
+                        <button type="button" className="btn btn--danger btn--sm" onClick={() => remove(p)}>
+                          Quitar
                         </button>
-                      ))}
-                  </td>
-                  <td>
-                    {isOrganizer && !isEditing && canDelete && (
-                      <button type="button" className="btn btn--danger btn--sm" onClick={() => remove(p)}>
-                        Quitar
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

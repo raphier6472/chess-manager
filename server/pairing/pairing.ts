@@ -21,18 +21,21 @@ export interface PairingResult {
 
 export interface SeedPlayer {
   id: string;
-  name: string;
+  lastName: string;
+  firstName: string;
   rating: number | null;
 }
 
 /**
  * Round-1 pairing: standard Swiss "fold" seeding (Harkness), the same
  * method Swiss Manager/Vega use. Players are ranked by rating (unrated
- * last), ties broken alphabetically, then the ranked list is split in half
- * and player i of the top half is paired against player i of the bottom
- * half (1 vs n/2+1, 2 vs n/2+2, ...). Color alternates by board: board 1's
- * top-half player is white, board 2's is black, board 3's white again, and
- * so on. If the field is odd, the lowest-ranked player gets the bye.
+ * last), ties broken alphabetically by surname then given name (the
+ * standard "Apellido, Nombre" tournament-list order), then the ranked list
+ * is split in half and player i of the top half is paired against player i
+ * of the bottom half (1 vs n/2+1, 2 vs n/2+2, ...). Color alternates by
+ * board: board 1's top-half player is white, board 2's is black, board 3's
+ * white again, and so on. If the field is odd, the lowest-ranked player
+ * gets the bye.
  */
 export function generateInitialPairings(players: SeedPlayer[]): PairingResult {
   if (players.length === 0) return { pairs: [], bye: null };
@@ -42,7 +45,9 @@ export function generateInitialPairings(players: SeedPlayer[]): PairingResult {
     const ratingA = a.rating ?? -Infinity;
     const ratingB = b.rating ?? -Infinity;
     if (ratingA !== ratingB) return ratingB - ratingA;
-    return a.name.localeCompare(b.name, "es");
+    const lastNameCompare = a.lastName.localeCompare(b.lastName, "es");
+    if (lastNameCompare !== 0) return lastNameCompare;
+    return a.firstName.localeCompare(b.firstName, "es");
   });
 
   let bye: string | null = null;

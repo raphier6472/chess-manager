@@ -89,8 +89,8 @@ describe("generatePairings", () => {
   });
 });
 
-function seed(id: string, name: string, rating: number | null): SeedPlayer {
-  return { id, name, rating };
+function seed(id: string, lastName: string, rating: number | null, firstName = ""): SeedPlayer {
+  return { id, lastName, firstName, rating };
 }
 
 describe("generateInitialPairings", () => {
@@ -116,7 +116,7 @@ describe("generateInitialPairings", () => {
     ]);
   });
 
-  it("breaks rating ties alphabetically", () => {
+  it("breaks rating ties alphabetically by surname", () => {
     const players = [seed("p1", "Zeta", 1500), seed("p2", "Alfa", 1500), seed("p3", "Beta", 1500), seed("p4", "Gamma", 1500)];
     const { pairs } = generateInitialPairings(players);
     // Alphabetical order: Alfa, Beta, Gamma, Zeta -> top half [Alfa, Beta] vs bottom half [Gamma, Zeta]
@@ -124,6 +124,31 @@ describe("generateInitialPairings", () => {
       { white: "p2", black: "p4" },
       { white: "p1", black: "p3" },
     ]);
+  });
+
+  it("sorts by surname even when given names would order differently", () => {
+    // If this sorted by first name, Ana (p1) would come before Beto (p2)
+    // and put Zapata ahead of Aguirre. Surname-first must win: Aguirre < Zapata.
+    const players = [
+      seed("p1", "Zapata", 1500, "Ana"),
+      seed("p2", "Aguirre", 1500, "Beto"),
+      seed("p3", "Zapata", 1500, "Beto"),
+      seed("p4", "Aguirre", 1500, "Ana"),
+    ];
+    const { pairs } = generateInitialPairings(players);
+    // Surname order: Aguirre, Ana (p4) / Aguirre, Beto (p2) / Zapata, Ana (p1) / Zapata, Beto (p3)
+    // -> top half [p4, p2] vs bottom half [p1, p3]
+    expect(pairs).toEqual([
+      { white: "p4", black: "p1" },
+      { white: "p3", black: "p2" },
+    ]);
+  });
+
+  it("breaks a surname tie by given name", () => {
+    const players = [seed("p1", "Salazar", 1500, "Diego"), seed("p2", "Salazar", 1500, "Ana")];
+    const { pairs } = generateInitialPairings(players);
+    // Same surname: Ana sorts before Diego, so p2 (Ana) is the top-half player.
+    expect(pairs).toEqual([{ white: "p2", black: "p1" }]);
   });
 
   it("seeds unrated players below rated ones", () => {

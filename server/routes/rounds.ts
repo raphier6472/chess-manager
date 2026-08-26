@@ -72,8 +72,8 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
   }
 
   const players = db
-    .prepare("SELECT id, name, rating FROM players WHERE tournament_id = ? AND withdrawn = 0")
-    .all(tournamentId) as Array<{ id: string; name: string; rating: number | null }>;
+    .prepare("SELECT id, last_name, first_name, rating FROM players WHERE tournament_id = ? AND withdrawn = 0")
+    .all(tournamentId) as Array<{ id: string; last_name: string; first_name: string; rating: number | null }>;
   if (players.length < 2) {
     return res.status(409).json({ error: "need at least 2 active players" });
   }
@@ -83,7 +83,13 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
 
   if (existingRounds.length === 0) {
     // Round 1: standard Swiss fold seeding by rating (see generateInitialPairings).
-    ({ pairs, bye } = generateInitialPairings(players));
+    const seedPlayers = players.map((p) => ({
+      id: p.id,
+      lastName: p.last_name,
+      firstName: p.first_name,
+      rating: p.rating,
+    }));
+    ({ pairs, bye } = generateInitialPairings(seedPlayers));
   } else {
     const matches = db
       .prepare(

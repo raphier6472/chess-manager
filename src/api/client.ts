@@ -32,13 +32,15 @@ export const api = {
   deleteTournament: (id: string) => request<void>(`/tournaments/${id}`, { method: "DELETE" }),
 
   listPlayers: (tournamentId: string) => request<Player[]>(`/tournaments/${tournamentId}/players`),
-  addPlayer: (tournamentId: string, input: { name: string; rating?: number | null }) =>
+  addPlayer: (tournamentId: string, input: { lastName: string; firstName?: string; rating?: number | null }) =>
     request<Player>(`/tournaments/${tournamentId}/players`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  updatePlayer: (id: string, patch: Partial<{ name: string; rating: number | null; withdrawn: boolean }>) =>
-    request<Player>(`/players/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  updatePlayer: (
+    id: string,
+    patch: Partial<{ lastName: string; firstName: string; rating: number | null; withdrawn: boolean }>,
+  ) => request<Player>(`/players/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deletePlayer: (id: string) => request<void>(`/players/${id}`, { method: "DELETE" }),
 
   listRounds: (tournamentId: string) =>

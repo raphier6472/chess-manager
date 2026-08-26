@@ -15,9 +15,16 @@ export interface Tournament {
 export interface Player {
   id: string;
   tournamentId: string;
-  name: string;
+  lastName: string;
+  firstName: string;
   rating: number | null;
   withdrawn: boolean;
+}
+
+/** Natural reading order ("Nombre Apellido") for display. Pairing and
+ * standings sort surname-first instead — see generateInitialPairings. */
+export function formatPlayerName(person: { lastName: string; firstName: string }): string {
+  return person.firstName ? `${person.firstName} ${person.lastName}` : person.lastName;
 }
 
 export interface Round {

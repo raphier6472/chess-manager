@@ -23,7 +23,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS players (
     id TEXT PRIMARY KEY,
     tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    first_name TEXT NOT NULL DEFAULT '',
     rating INTEGER,
     withdrawn INTEGER NOT NULL DEFAULT 0
   );
@@ -54,3 +55,31 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 `);
+
+// Migration: split the old single "name" column into last_name/first_name.
+// Pairing and standings sort surname-first, so the split has to be real
+// columns rather than parsed out of a free-text name at query time.
+const playerColumns = db.prepare("PRAGMA table_info(players)").all() as Array<{ name: string }>;
+const hasOldNameColumn = playerColumns.some((c) => c.name === "name");
+const hasLastNameColumn = playerColumns.some((c) => c.name === "last_name");
+if (hasOldNameColumn && !hasLastNameColumn) {
+  db.exec("ALTER TABLE players ADD COLUMN last_name TEXT NOT NULL DEFAULT ''");
+  db.exec("ALTER TABLE players ADD COLUMN first_name TEXT NOT NULL DEFAULT ''");
+
+  const rows = db.prepare("SELECT id, name FROM players").all() as Array<{ id: string; name: string }>;
+  const update = db.prepare("UPDATE players SET last_name = ?, first_name = ? WHERE id = ?");
+  const migrate = db.transaction(() => {
+    for (const row of rows) {
+      const parts = row.name.trim().split(/\s+/).filter(Boolean);
+      // "Nombre Apellido" free text: last word is treated as the surname,
+      // everything before it as the given name(s). A single word becomes
+      // just the surname, since that's the field pairing sorts on.
+      const lastName = parts.length > 1 ? parts[parts.length - 1] : (parts[0] ?? "");
+      const firstName = parts.length > 1 ? parts.slice(0, -1).join(" ") : "";
+      update.run(lastName, firstName, row.id);
+    }
+  });
+  migrate();
+
+  db.exec("ALTER TABLE players DROP COLUMN name");
+}
