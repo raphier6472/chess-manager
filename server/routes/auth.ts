@@ -9,9 +9,14 @@ const router = Router();
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
+  // Solo cuentan los intentos FALLIDOS. Antes también contaban los exitosos, así que
+  // el organizador se auto-bloqueaba 15 minutos al 6º login correcto (entrar desde el
+  // celular y la laptop, o cerrar sesión y volver, alcanzaba). Frenar fuerza bruta
+  // solo requiere contar los fallos.
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "too many login attempts, try again later" },
+  message: { error: "demasiados intentos de acceso, probá de nuevo en unos minutos" },
   // Cloudflare reescribe CF-Connecting-IP en cada request, así que un cliente no puede
   // falsearlo a través del túnel (a diferencia de X-Forwarded-For, que sí es del cliente).
   // Sin ese header — acceso directo al origen, o desarrollo local — todos los intentos
@@ -28,14 +33,14 @@ const loginLimiter = rateLimit({
 router.post("/auth/login", loginLimiter, (req, res) => {
   const storedHash = process.env.ORGANIZER_PASSWORD_HASH;
   if (!storedHash) {
-    return res.status(500).json({ error: "organizer auth is not configured" });
+    return res.status(500).json({ error: "el acceso de organizador no está configurado en el servidor" });
   }
   const { password } = req.body ?? {};
   if (typeof password !== "string" || !password) {
-    return res.status(400).json({ error: "password is required" });
+    return res.status(400).json({ error: "ingresá la contraseña" });
   }
   if (!verifyPassword(password, storedHash)) {
-    return res.status(401).json({ error: "invalid password" });
+    return res.status(401).json({ error: "contraseña incorrecta" });
   }
   const { token, cookieMaxAgeMs } = createSession();
   res.cookie(SESSION_COOKIE_NAME, token, { ...cookieOptions, maxAge: cookieMaxAgeMs });

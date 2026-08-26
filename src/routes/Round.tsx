@@ -11,9 +11,17 @@ const RESULT_OPTIONS: Array<{ value: "white" | "draw" | "black"; label: string }
   { value: "black", label: "0-1" },
 ];
 
+/**
+ * Línea bajo el nombre en la mesa. Sin Elo se omite el número: "0 · 3 pts" se leía
+ * como dos puntajes distintos.
+ */
+function playerMeta(p: BoardPlayer): string {
+  return p.rating != null ? `${p.rating} · ${p.score} pts` : `${p.score} pts`;
+}
+
 interface BoardPlayer {
   name: string;
-  rating: number;
+  rating: number | null;
   score: number;
 }
 
@@ -48,10 +56,10 @@ export default function RoundPage() {
     const m = new Map<string, BoardPlayer>(
       (players ?? []).map((p) => [
         p.id,
-        { name: formatPlayerName(p), rating: p.rating ?? 0, score: scoreById.get(p.id) ?? 0 },
+        { name: formatPlayerName(p), rating: p.rating, score: scoreById.get(p.id) ?? 0 },
       ]),
     );
-    return (id: string): BoardPlayer => m.get(id) ?? { name: "?", rating: 0, score: 0 };
+    return (id: string): BoardPlayer => m.get(id) ?? { name: "?", rating: null, score: 0 };
   }, [players, standings]);
 
   if (!rounds || !players || !standings) return null;
@@ -95,6 +103,22 @@ export default function RoundPage() {
     setBusy(true);
     try {
       await api.completeRound(viewed.id);
+      load();
+      reloadTournament();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reopenRound = async () => {
+    if (!viewed) return;
+    if (!confirm(`¿Reabrir la ronda ${viewed.number} para corregir un resultado?`)) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.reopenRound(viewed.id);
       load();
       reloadTournament();
     } catch (err) {
@@ -156,6 +180,17 @@ export default function RoundPage() {
               {!allResultsIn && <p className="hint" style={{ marginTop: "0.5rem" }}>Cargá todos los resultados para poder cerrarla.</p>}
             </div>
           )}
+
+          {isOrganizer && isLatest && viewed.status === "completed" && (
+            <div style={{ marginTop: "1.25rem" }}>
+              <button type="button" className="btn btn--ghost" disabled={busy} onClick={reopenRound}>
+                Reabrir ronda {viewed.number}
+              </button>
+              <p className="hint" style={{ marginTop: "0.5rem" }}>
+                Si cargaste mal un resultado, reabrí la ronda para corregirlo y volvé a cerrarla.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -210,9 +245,7 @@ function BoardRow({
         <span className="piece-swatch piece-swatch--white" />
         <div className="board-row__player-text">
           <span className="board-row__name">{white.name}</span>
-          <span className="board-row__player-meta">
-            {white.rating} · {white.score} pts
-          </span>
+          <span className="board-row__player-meta">{playerMeta(white)}</span>
         </div>
       </div>
       <div className="result-picker">
@@ -232,9 +265,7 @@ function BoardRow({
         <span className="piece-swatch piece-swatch--black" />
         <div className="board-row__player-text">
           <span className="board-row__name">{black.name}</span>
-          <span className="board-row__player-meta">
-            {black.rating} · {black.score} pts
-          </span>
+          <span className="board-row__player-meta">{playerMeta(black)}</span>
         </div>
       </div>
     </div>

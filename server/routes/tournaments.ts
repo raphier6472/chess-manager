@@ -37,16 +37,16 @@ router.get("/tournaments", (_req, res) => {
 router.post("/tournaments", requireAuth, (req, res) => {
   const { name, date, numRounds } = req.body ?? {};
   if (typeof name !== "string" || !name.trim()) {
-    return res.status(400).json({ error: "name is required" });
+    return res.status(400).json({ error: "el nombre es obligatorio" });
   }
   if (typeof date !== "string" || !date.trim()) {
-    return res.status(400).json({ error: "date is required" });
+    return res.status(400).json({ error: "la fecha es obligatoria" });
   }
   // MAX_ROUNDS coincide con el max del input en TournamentList.tsx: sin cota el
   // servidor aceptaba cualquier entero (ej. 999999999).
   const rounds = Number(numRounds);
   if (!Number.isInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) {
-    return res.status(400).json({ error: `numRounds must be an integer between 1 and ${MAX_ROUNDS}` });
+    return res.status(400).json({ error: `la cantidad de rondas debe ser un número entre 1 y ${MAX_ROUNDS}` });
   }
   const id = nanoid();
   db.prepare(
@@ -60,7 +60,7 @@ router.get("/tournaments/:id", (req, res) => {
   const row = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(req.params.id) as
     | TournamentRow
     | undefined;
-  if (!row) return res.status(404).json({ error: "tournament not found" });
+  if (!row) return res.status(404).json({ error: "no se encontró el torneo" });
   res.json(toTournament(row));
 });
 
@@ -68,7 +68,7 @@ router.delete("/tournaments/:id", requireAuth, (req, res) => {
   const row = db.prepare("SELECT status FROM tournaments WHERE id = ?").get(req.params.id) as
     | { status: string }
     | undefined;
-  if (!row) return res.status(404).json({ error: "tournament not found" });
+  if (!row) return res.status(404).json({ error: "no se encontró el torneo" });
   // Se puede borrar en cualquier estado, incluso en curso: si no, un torneo de prueba
   // que ya arrancó queda imposible de limpiar. La protección contra el borrado
   // accidental vive en la confirmación reforzada de la UI (ver TournamentShell.tsx),
@@ -80,7 +80,7 @@ router.delete("/tournaments/:id", requireAuth, (req, res) => {
 router.get("/tournaments/:id/standings", (req, res) => {
   const tournamentId = req.params.id;
   const tournament = db.prepare("SELECT id FROM tournaments WHERE id = ?").get(tournamentId);
-  if (!tournament) return res.status(404).json({ error: "tournament not found" });
+  if (!tournament) return res.status(404).json({ error: "no se encontró el torneo" });
 
   const playerRows = db
     .prepare("SELECT id, last_name, first_name FROM players WHERE tournament_id = ?")

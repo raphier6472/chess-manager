@@ -50,6 +50,7 @@ export const api = {
   submitResult: (matchId: string, result: "white" | "black" | "draw") =>
     request<Match>(`/matches/${matchId}/result`, { method: "POST", body: JSON.stringify({ result }) }),
   completeRound: (roundId: string) => request<Round>(`/rounds/${roundId}/complete`, { method: "POST" }),
+  reopenRound: (roundId: string) => request<Round>(`/rounds/${roundId}/reopen`, { method: "POST" }),
 
   getStandings: (tournamentId: string) => request<StandingsRow[]>(`/tournaments/${tournamentId}/standings`),
 

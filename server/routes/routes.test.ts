@@ -142,6 +142,88 @@ describe("resultados de una ronda cerrada", () => {
   });
 });
 
+describe("reabrir ronda", () => {
+  it("permite corregir un resultado de la última ronda cerrada y volver a cerrarla", async () => {
+    const agent = await organizer();
+    const tid = await seedTournament(agent, "Reabrir");
+    const rnd = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+    const roundId = rnd.body.id as string;
+    const matchId = rnd.body.matches[0].id as string;
+
+    await agent.post(`/api/matches/${matchId}/result`).send({ result: "white" });
+    await agent.post(`/api/rounds/${roundId}/complete`);
+    expect((await request(app).get(`/api/tournaments/${tid}`)).body.status).toBe("completed");
+
+    // Con la ronda cerrada el resultado está bloqueado...
+    expect((await agent.post(`/api/matches/${matchId}/result`).send({ result: "black" })).status).toBe(409);
+
+    // ...hasta que se reabre. El torneo vuelve a estar en curso.
+    expect((await agent.post(`/api/rounds/${roundId}/reopen`)).status).toBe(200);
+    expect((await request(app).get(`/api/tournaments/${tid}`)).body.status).toBe("active");
+
+    expect((await agent.post(`/api/matches/${matchId}/result`).send({ result: "black" })).status).toBe(200);
+    expect((await agent.post(`/api/rounds/${roundId}/complete`)).status).toBe(200);
+
+    const standings = await request(app).get(`/api/tournaments/${tid}/standings`);
+    expect(standings.body[0].score).toBe(1);
+    expect(standings.body[0].name).toBe("Beta");
+  });
+
+  it("no deja reabrir una ronda si ya se emparejó la siguiente", async () => {
+    const agent = await organizer();
+    const t = await agent.post("/api/tournaments").send({ name: "Reabrir vieja", date: "2026-08-26", numRounds: 2 });
+    const tid = t.body.id as string;
+    for (const lastName of ["Alfa", "Beta"]) {
+      await agent.post(`/api/tournaments/${tid}/players`).send({ lastName });
+    }
+    const r1 = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+    await agent.post(`/api/matches/${r1.body.matches[0].id}/result`).send({ result: "white" });
+    await agent.post(`/api/rounds/${r1.body.id}/complete`);
+    await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+
+    const res = await agent.post(`/api/rounds/${r1.body.id}/reopen`);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("última ronda");
+  });
+
+  it("no deja reabrir una ronda que sigue abierta", async () => {
+    const agent = await organizer();
+    const tid = await seedTournament(agent, "Reabrir abierta");
+    const rnd = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+    expect((await agent.post(`/api/rounds/${rnd.body.id}/reopen`)).status).toBe(409);
+  });
+});
+
+describe("mensajes al organizador", () => {
+  it("están en español", async () => {
+    const agent = await organizer();
+    const tid = await seedTournament(agent, "Mensajes");
+
+    const sinApellido = await agent.post(`/api/tournaments/${tid}/players`).send({ lastName: "" });
+    expect(sinApellido.body.error).toBe("el apellido es obligatorio");
+
+    const noExiste = await request(app).get("/api/tournaments/noexiste");
+    expect(noExiste.body.error).toBe("no se encontró el torneo");
+
+    // Torneo de 2 rondas: así el segundo "emparejar" choca con la ronda abierta y no
+    // con el tope de rondas del torneo.
+    const t2 = await agent
+      .post("/api/tournaments")
+      .send({ name: "Mensajes 2", date: "2026-08-26", numRounds: 2 });
+    const t2id = t2.body.id as string;
+    for (const lastName of ["Alfa", "Beta"]) {
+      await agent.post(`/api/tournaments/${t2id}/players`).send({ lastName });
+    }
+    const rnd = await agent.post(`/api/tournaments/${t2id}/rounds/generate`);
+
+    const sinCerrar = await agent.post(`/api/tournaments/${t2id}/rounds/generate`);
+    expect(sinCerrar.body.error).toBe("primero tenés que cerrar la ronda anterior");
+
+    const faltanResultados = await agent.post(`/api/rounds/${rnd.body.id}/complete`);
+    expect(faltanResultados.body.error).toBe("cargá el resultado de todas las mesas antes de cerrar la ronda");
+  });
+});
+
 describe("validación de entrada", () => {
   it("acota numRounds", async () => {
     const agent = await organizer();

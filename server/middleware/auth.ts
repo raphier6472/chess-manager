@@ -15,7 +15,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = req.signedCookies?.[SESSION_COOKIE_NAME];
   if (!token || !touchSession(token)) {
     res.clearCookie(SESSION_COOKIE_NAME, cookieOptions);
-    return res.status(401).json({ error: "authentication required" });
+    return res.status(401).json({ error: "tu sesión expiró: volvé a entrar como organizador" });
   }
   next();
 }

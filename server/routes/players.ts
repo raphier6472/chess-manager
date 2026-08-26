@@ -16,7 +16,7 @@ function parseRating(raw: unknown): { value: number | null } | { error: string }
   if (raw === undefined || raw === null || raw === "") return { value: null };
   const value = Number(raw);
   if (!Number.isInteger(value) || value < MIN_RATING || value > MAX_RATING) {
-    return { error: `rating must be an integer between ${MIN_RATING} and ${MAX_RATING}` };
+    return { error: `el Elo debe ser un número entero entre ${MIN_RATING} y ${MAX_RATING}` };
   }
   return { value };
 }
@@ -52,11 +52,11 @@ router.get("/tournaments/:tournamentId/players", (req, res) => {
 
 router.post("/tournaments/:tournamentId/players", requireAuth, (req, res) => {
   const tournament = db.prepare("SELECT id FROM tournaments WHERE id = ?").get(req.params.tournamentId);
-  if (!tournament) return res.status(404).json({ error: "tournament not found" });
+  if (!tournament) return res.status(404).json({ error: "no se encontró el torneo" });
 
   const { lastName, firstName, rating } = req.body ?? {};
   if (typeof lastName !== "string" || !lastName.trim()) {
-    return res.status(400).json({ error: "lastName is required" });
+    return res.status(400).json({ error: "el apellido es obligatorio" });
   }
   const firstNameValue = typeof firstName === "string" ? firstName.trim() : "";
   const parsedRating = parseRating(rating);
@@ -77,7 +77,7 @@ router.patch("/players/:id", requireAuth, (req, res) => {
   const row = db.prepare("SELECT * FROM players WHERE id = ?").get(req.params.id) as
     | PlayerRow
     | undefined;
-  if (!row) return res.status(404).json({ error: "player not found" });
+  if (!row) return res.status(404).json({ error: "no se encontró el jugador" });
 
   const { withdrawn, lastName, firstName, rating } = req.body ?? {};
 
@@ -109,14 +109,14 @@ router.delete("/players/:id", requireAuth, (req, res) => {
   const player = db.prepare("SELECT * FROM players WHERE id = ?").get(req.params.id) as
     | PlayerRow
     | undefined;
-  if (!player) return res.status(404).json({ error: "player not found" });
+  if (!player) return res.status(404).json({ error: "no se encontró el jugador" });
 
   const tournament = db
     .prepare("SELECT status FROM tournaments WHERE id = ?")
     .get(player.tournament_id) as { status: string } | undefined;
   if (tournament && tournament.status !== "setup") {
     return res.status(409).json({
-      error: "cannot delete a player once the tournament has started; withdraw them instead",
+      error: "no se puede quitar un jugador con el torneo empezado; retiralo en su lugar",
     });
   }
 

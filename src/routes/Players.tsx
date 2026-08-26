@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -14,6 +14,9 @@ export default function Players() {
   const [lastName, setLastName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [rating, setRating] = useState("");
+  // Anotar la lista al inicio del torneo es repetitivo: el foco vuelve acá tras cada
+  // alta para poder encadenar jugadores sin sacar la mano del teclado.
+  const lastNameInput = useRef<HTMLInputElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLastName, setEditLastName] = useState("");
   const [editFirstName, setEditFirstName] = useState("");
@@ -42,6 +45,7 @@ export default function Players() {
       setLastName("");
       setFirstName("");
       setRating("");
+      lastNameInput.current?.focus();
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -98,7 +102,13 @@ export default function Players() {
           <div className="form-row">
             <div className="field" style={{ flex: "1 1 180px" }}>
               <label htmlFor="plastname">Apellido</label>
-              <input id="plastname" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+              <input
+                id="plastname"
+                ref={lastNameInput}
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                required
+              />
             </div>
             <div className="field" style={{ flex: "1 1 180px" }}>
               <label htmlFor="pfirstname">Nombre</label>

@@ -55,19 +55,19 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
   const tournament = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(tournamentId) as
     | { id: string; num_rounds: number; status: string }
     | undefined;
-  if (!tournament) return res.status(404).json({ error: "tournament not found" });
+  if (!tournament) return res.status(404).json({ error: "no se encontró el torneo" });
 
   const existingRounds = db
     .prepare("SELECT * FROM rounds WHERE tournament_id = ? ORDER BY number")
     .all(tournamentId) as RoundRow[];
 
   if (existingRounds.length >= tournament.num_rounds) {
-    return res.status(409).json({ error: "tournament already has all its rounds" });
+    return res.status(409).json({ error: "el torneo ya jugó todas sus rondas" });
   }
   if (existingRounds.length > 0) {
     const last = existingRounds[existingRounds.length - 1];
     if (last.status !== "completed") {
-      return res.status(409).json({ error: "the previous round must be completed first" });
+      return res.status(409).json({ error: "primero tenés que cerrar la ronda anterior" });
     }
   }
 
@@ -75,7 +75,7 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
     .prepare("SELECT id, last_name, first_name, rating FROM players WHERE tournament_id = ? AND withdrawn = 0")
     .all(tournamentId) as Array<{ id: string; last_name: string; first_name: string; rating: number | null }>;
   if (players.length < 2) {
-    return res.status(409).json({ error: "need at least 2 active players" });
+    return res.status(409).json({ error: "hacen falta al menos 2 jugadores activos para emparejar" });
   }
 
   let pairs: PairingPair[];
@@ -182,9 +182,9 @@ router.post("/matches/:id/result", requireAuth, (req, res) => {
   const match = db.prepare("SELECT * FROM matches WHERE id = ?").get(req.params.id) as
     | MatchRow
     | undefined;
-  if (!match) return res.status(404).json({ error: "match not found" });
+  if (!match) return res.status(404).json({ error: "no se encontró la partida" });
   if (match.black_id === null) {
-    return res.status(409).json({ error: "byes cannot have a result submitted" });
+    return res.status(409).json({ error: "un bye no lleva resultado" });
   }
   // La UI deshabilita el picker en una ronda cerrada, pero eso es solo cosmético:
   // sin esta guarda se puede reescribir el resultado (y dar vuelta el podio) de un
@@ -199,7 +199,7 @@ router.post("/matches/:id/result", requireAuth, (req, res) => {
   }
   const { result } = req.body ?? {};
   if (!["white", "black", "draw"].includes(result)) {
-    return res.status(400).json({ error: "result must be 'white', 'black' or 'draw'" });
+    return res.status(400).json({ error: "el resultado debe ser 1-0, ½-½ o 0-1" });
   }
   db.prepare("UPDATE matches SET result = ? WHERE id = ?").run(result, match.id);
   const updated = db.prepare("SELECT * FROM matches WHERE id = ?").get(match.id) as MatchRow;
@@ -210,7 +210,7 @@ router.post("/rounds/:id/complete", requireAuth, (req, res) => {
   const round = db.prepare("SELECT * FROM rounds WHERE id = ?").get(req.params.id) as
     | RoundRow
     | undefined;
-  if (!round) return res.status(404).json({ error: "round not found" });
+  if (!round) return res.status(404).json({ error: "no se encontró la ronda" });
   if (round.status === "completed") {
     return res.status(409).json({ error: "la ronda ya está cerrada" });
   }
@@ -220,7 +220,7 @@ router.post("/rounds/:id/complete", requireAuth, (req, res) => {
   if (pending) {
     return res
       .status(409)
-      .json({ error: "all matches must have a result before completing the round" });
+      .json({ error: "cargá el resultado de todas las mesas antes de cerrar la ronda" });
   }
 
   const tournament = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(round.tournament_id) as
@@ -237,6 +237,42 @@ router.post("/rounds/:id/complete", requireAuth, (req, res) => {
 
   const updated = db.prepare("SELECT * FROM rounds WHERE id = ?").get(round.id) as RoundRow;
   res.json(toRound(updated));
+});
+
+/**
+ * Reabre la última ronda cerrada para corregir un resultado mal cargado.
+ * Solo la última, y solo mientras no se haya emparejado la siguiente: tocar una ronda
+ * vieja cambiaría los puntajes sobre los que ya se armaron los cruces posteriores.
+ */
+router.post("/rounds/:id/reopen", requireAuth, (req, res) => {
+  const round = db.prepare("SELECT * FROM rounds WHERE id = ?").get(req.params.id) as
+    | RoundRow
+    | undefined;
+  if (!round) return res.status(404).json({ error: "no se encontró la ronda" });
+  if (round.status !== "completed") {
+    return res.status(409).json({ error: "la ronda no está cerrada" });
+  }
+
+  const later = db
+    .prepare("SELECT COUNT(*) AS n FROM rounds WHERE tournament_id = ? AND number > ?")
+    .get(round.tournament_id, round.number) as { n: number };
+  if (later.n > 0) {
+    return res.status(409).json({
+      error: "solo se puede reabrir la última ronda; ya se emparejó una posterior",
+    });
+  }
+
+  const tx = db.transaction(() => {
+    db.prepare("UPDATE rounds SET status = 'paired' WHERE id = ?").run(round.id);
+    // Si el torneo había quedado terminado por ser la última ronda, vuelve a estar en curso.
+    db.prepare("UPDATE tournaments SET status = 'active' WHERE id = ? AND status = 'completed'").run(
+      round.tournament_id,
+    );
+  });
+  tx();
+
+  const reopened = db.prepare("SELECT * FROM rounds WHERE id = ?").get(round.id) as RoundRow;
+  res.json(toRound(reopened));
 });
 
 export default router;
