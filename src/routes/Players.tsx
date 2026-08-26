@@ -141,7 +141,7 @@ export default function Players() {
                         style={{ width: "5rem" }}
                       />
                     ) : (
-                      p.rating ?? "—"
+                      p.rating ?? 0
                     )}
                   </td>
                   <td>
