@@ -13,6 +13,9 @@ export default function Players() {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [rating, setRating] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRating, setEditRating] = useState("");
 
   const load = () => {
     if (!tournamentId) return;
@@ -44,6 +47,30 @@ export default function Players() {
   const toggleWithdrawn = async (p: Player) => {
     await api.updatePlayer(p.id, { withdrawn: !p.withdrawn });
     load();
+  };
+
+  const startEdit = (p: Player) => {
+    setError(null);
+    setEditingId(p.id);
+    setEditName(p.name);
+    setEditRating(p.rating != null ? String(p.rating) : "");
+  };
+
+  const cancelEdit = () => setEditingId(null);
+
+  const saveEdit = async (p: Player) => {
+    if (!editName.trim()) return;
+    setError(null);
+    try {
+      await api.updatePlayer(p.id, {
+        name: editName.trim(),
+        rating: editRating.trim() ? Number(editRating) : null,
+      });
+      setEditingId(null);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const remove = async (p: Player) => {
@@ -89,29 +116,67 @@ export default function Players() {
               <th className="num">Elo</th>
               <th></th>
               <th></th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {players.map((p) => (
-              <tr key={p.id} style={p.withdrawn ? { opacity: 0.5 } : undefined}>
-                <td>{p.name}</td>
-                <td className="num">{p.rating ?? "—"}</td>
-                <td>
-                  {isOrganizer && (
-                    <button type="button" className="btn btn--ghost btn--sm" onClick={() => toggleWithdrawn(p)}>
-                      {p.withdrawn ? "Reincorporar" : "Retirar"}
-                    </button>
-                  )}
-                </td>
-                <td>
-                  {isOrganizer && canDelete && (
-                    <button type="button" className="btn btn--danger btn--sm" onClick={() => remove(p)}>
-                      Quitar
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {players.map((p) => {
+              const isEditing = editingId === p.id;
+              return (
+                <tr key={p.id} style={p.withdrawn && !isEditing ? { opacity: 0.5 } : undefined}>
+                  <td>
+                    {isEditing ? (
+                      <input value={editName} onChange={(e) => setEditName(e.target.value)} autoFocus />
+                    ) : (
+                      p.name
+                    )}
+                  </td>
+                  <td className="num">
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={editRating}
+                        onChange={(e) => setEditRating(e.target.value)}
+                        style={{ width: "5rem" }}
+                      />
+                    ) : (
+                      p.rating ?? "—"
+                    )}
+                  </td>
+                  <td>
+                    {isOrganizer &&
+                      (isEditing ? (
+                        <button type="button" className="btn btn--felt btn--sm" onClick={() => saveEdit(p)}>
+                          Guardar
+                        </button>
+                      ) : (
+                        <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEdit(p)}>
+                          Editar
+                        </button>
+                      ))}
+                  </td>
+                  <td>
+                    {isOrganizer &&
+                      (isEditing ? (
+                        <button type="button" className="btn btn--ghost btn--sm" onClick={cancelEdit}>
+                          Cancelar
+                        </button>
+                      ) : (
+                        <button type="button" className="btn btn--ghost btn--sm" onClick={() => toggleWithdrawn(p)}>
+                          {p.withdrawn ? "Reincorporar" : "Retirar"}
+                        </button>
+                      ))}
+                  </td>
+                  <td>
+                    {isOrganizer && !isEditing && canDelete && (
+                      <button type="button" className="btn btn--danger btn--sm" onClick={() => remove(p)}>
+                        Quitar
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

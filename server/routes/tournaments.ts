@@ -61,8 +61,16 @@ router.get("/tournaments/:id", (req, res) => {
 });
 
 router.delete("/tournaments/:id", requireAuth, (req, res) => {
-  const info = db.prepare("DELETE FROM tournaments WHERE id = ?").run(req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: "tournament not found" });
+  const row = db.prepare("SELECT status FROM tournaments WHERE id = ?").get(req.params.id) as
+    | { status: string }
+    | undefined;
+  if (!row) return res.status(404).json({ error: "tournament not found" });
+  if (row.status !== "setup") {
+    return res
+      .status(409)
+      .json({ error: "no se puede eliminar un torneo que ya empezó a jugarse" });
+  }
+  db.prepare("DELETE FROM tournaments WHERE id = ?").run(req.params.id);
   res.status(204).end();
 });
 

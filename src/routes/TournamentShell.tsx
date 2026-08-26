@@ -21,6 +21,7 @@ export default function TournamentShell() {
   const navigate = useNavigate();
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!tournamentId) return;
@@ -37,8 +38,13 @@ export default function TournamentShell() {
 
   const removeTournament = async () => {
     if (!confirm(`¿Eliminar "${tournament.name}" y todos sus datos?`)) return;
-    await api.deleteTournament(tournament.id);
-    navigate("/");
+    setDeleteError(null);
+    try {
+      await api.deleteTournament(tournament.id);
+      navigate("/");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   return (
@@ -53,10 +59,13 @@ export default function TournamentShell() {
           </p>
           <h1>{tournament.name}</h1>
         </div>
-        {isOrganizer && (
-          <button type="button" className="btn btn--danger btn--sm" onClick={removeTournament}>
-            Eliminar torneo
-          </button>
+        {isOrganizer && tournament.status === "setup" && (
+          <div>
+            <button type="button" className="btn btn--danger btn--sm" onClick={removeTournament}>
+              Eliminar torneo
+            </button>
+            {deleteError && <p className="form-error">{deleteError}</p>}
+          </div>
         )}
       </div>
 

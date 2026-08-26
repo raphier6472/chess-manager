@@ -114,5 +114,14 @@ export function generatePairings(players: PairingPlayer[]): PairingResult {
     pairs.push({ white: white.id, black: black.id });
   }
 
+  // Board order follows standard Swiss practice: the leading score group
+  // sits on board 1, descending from there, so winners keep climbing to the
+  // top boards each round instead of staying wherever they were paired.
+  pairs.sort((a, b) => {
+    const scoreA = Math.max(byId.get(a.white)!.score, byId.get(a.black)!.score);
+    const scoreB = Math.max(byId.get(b.white)!.score, byId.get(b.black)!.score);
+    return scoreB - scoreA;
+  });
+
   return { pairs, bye };
 }
