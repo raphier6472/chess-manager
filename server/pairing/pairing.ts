@@ -30,8 +30,9 @@ export interface SeedPlayer {
  * method Swiss Manager/Vega use. Players are ranked by rating (unrated
  * last), ties broken alphabetically, then the ranked list is split in half
  * and player i of the top half is paired against player i of the bottom
- * half (1 vs n/2+1, 2 vs n/2+2, ...). The top half plays white. If the
- * field is odd, the lowest-ranked player gets the bye.
+ * half (1 vs n/2+1, 2 vs n/2+2, ...). Color alternates by board: board 1's
+ * top-half player is white, board 2's is black, board 3's white again, and
+ * so on. If the field is odd, the lowest-ranked player gets the bye.
  */
 export function generateInitialPairings(players: SeedPlayer[]): PairingResult {
   if (players.length === 0) return { pairs: [], bye: null };
@@ -52,7 +53,15 @@ export function generateInitialPairings(players: SeedPlayer[]): PairingResult {
   const half = seeded.length / 2;
   const pairs: PairingPair[] = [];
   for (let i = 0; i < half; i++) {
-    pairs.push({ white: seeded[i].id, black: seeded[i + half].id });
+    const top = seeded[i];
+    const bottom = seeded[i + half];
+    // Color alternates by board, not by seed: board 1's top-half player is
+    // white, board 2's is black, board 3's is white again, and so on.
+    if (i % 2 === 0) {
+      pairs.push({ white: top.id, black: bottom.id });
+    } else {
+      pairs.push({ white: bottom.id, black: top.id });
+    }
   }
 
   return { pairs, bye };

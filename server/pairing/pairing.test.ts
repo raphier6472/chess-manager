@@ -107,11 +107,12 @@ describe("generateInitialPairings", () => {
     ];
     const { pairs, bye } = generateInitialPairings(players);
     expect(bye).toBeNull();
+    // Board order is top-vs-bottom by seed; color alternates by board.
     expect(pairs).toEqual([
       { white: "p1", black: "p5" },
-      { white: "p2", black: "p6" },
+      { white: "p6", black: "p2" },
       { white: "p3", black: "p7" },
-      { white: "p4", black: "p8" },
+      { white: "p8", black: "p4" },
     ]);
   });
 
@@ -121,7 +122,7 @@ describe("generateInitialPairings", () => {
     // Alphabetical order: Alfa, Beta, Gamma, Zeta -> top half [Alfa, Beta] vs bottom half [Gamma, Zeta]
     expect(pairs).toEqual([
       { white: "p2", black: "p4" },
-      { white: "p3", black: "p1" },
+      { white: "p1", black: "p3" },
     ]);
   });
 
