@@ -103,7 +103,7 @@ export default function RoundPage() {
               className="btn btn--sm"
               style={{
                 borderColor: "var(--line)",
-                background: r.number === viewedNumber ? "var(--brass-soft)" : "transparent",
+                background: r.number === viewedNumber ? "var(--signal-soft)" : "transparent",
               }}
               onClick={() => setViewedNumber(r.number)}
             >
