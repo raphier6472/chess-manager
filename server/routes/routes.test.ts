@@ -51,7 +51,7 @@ async function seedTournament(agent: ReturnType<typeof request.agent>, name: str
 }
 
 describe("eliminar torneo", () => {
-  it("se puede eliminar en cualquier estado, incluso en curso", async () => {
+  it("se puede enviar a la papelera en cualquier estado, incluso en curso", async () => {
     const agent = await organizer();
 
     // sin empezar
@@ -77,19 +77,61 @@ describe("eliminar torneo", () => {
     expect((await request(app).get(`/api/tournaments/${doneId}`)).status).toBe(404);
   });
 
-  it("borrar un torneo se lleva sus jugadores, rondas y partidas", async () => {
+  it("un torneo en la papelera queda invisible para toda la API pública", async () => {
     const agent = await organizer();
-    const tid = await seedTournament(agent, "Del cascada");
+    const tid = await seedTournament(agent, "Papelera oculta");
     await agent.post(`/api/tournaments/${tid}/rounds/generate`);
 
     expect((await request(app).get(`/api/tournaments/${tid}/players`)).body.length).toBeGreaterThan(0);
-    expect((await request(app).get(`/api/tournaments/${tid}/rounds`)).body.length).toBeGreaterThan(0);
 
-    expect((await agent.delete(`/api/tournaments/${tid}`)).status).toBe(204);
+    await agent.delete(`/api/tournaments/${tid}`);
 
-    // Sin cascada correcta quedarían filas huérfanas apuntando a un torneo inexistente.
-    expect((await request(app).get(`/api/tournaments/${tid}/players`)).body).toEqual([]);
-    expect((await request(app).get(`/api/tournaments/${tid}/rounds`)).body).toEqual([]);
+    // No debe filtrarse por ninguna vía lateral aunque se conozca el id.
+    for (const ruta of ["", "/players", "/rounds", "/standings"]) {
+      expect((await request(app).get(`/api/tournaments/${tid}${ruta}`)).status).toBe(404);
+    }
+    const listado = await request(app).get("/api/tournaments");
+    expect(listado.body.some((t: { id: string }) => t.id === tid)).toBe(false);
+  });
+
+  it("restaura un torneo de la papelera con sus datos intactos", async () => {
+    const agent = await organizer();
+    const tid = await seedTournament(agent, "Para restaurar");
+    const rnd = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+    await agent.post(`/api/matches/${rnd.body.matches[0].id}/result`).send({ result: "white" });
+    const antes = await request(app).get(`/api/tournaments/${tid}/standings`);
+
+    await agent.delete(`/api/tournaments/${tid}`);
+    const papelera = await agent.get("/api/tournaments-papelera");
+    expect(papelera.body.some((t: { id: string }) => t.id === tid)).toBe(true);
+
+    expect((await agent.post(`/api/tournaments/${tid}/restaurar`)).status).toBe(200);
+
+    const vivo = await request(app).get(`/api/tournaments/${tid}`);
+    expect(vivo.status).toBe(200);
+    expect(vivo.body.deletedAt).toBeNull();
+    // Los resultados que ya estaban cargados siguen ahí.
+    const despues = await request(app).get(`/api/tournaments/${tid}/standings`);
+    expect(despues.body).toEqual(antes.body);
+  });
+
+  it("la papelera es privada y el borrado definitivo exige pasar por ella", async () => {
+    const agent = await organizer();
+    const tid = await seedTournament(agent, "Definitivo");
+
+    expect((await request(app).get("/api/tournaments-papelera")).status).toBe(401);
+    expect((await request(app).delete(`/api/tournaments/${tid}/definitivo`)).status).toBe(401);
+
+    // Un torneo activo no se puede borrar para siempre de un solo paso.
+    expect((await agent.delete(`/api/tournaments/${tid}/definitivo`)).status).toBe(409);
+
+    await agent.delete(`/api/tournaments/${tid}`);
+    expect((await agent.delete(`/api/tournaments/${tid}/definitivo`)).status).toBe(204);
+
+    // Ahora sí desapareció, también de la papelera.
+    const papelera = await agent.get("/api/tournaments-papelera");
+    expect(papelera.body.some((t: { id: string }) => t.id === tid)).toBe(false);
+    expect((await agent.post(`/api/tournaments/${tid}/restaurar`)).status).toBe(404);
   });
 });
 

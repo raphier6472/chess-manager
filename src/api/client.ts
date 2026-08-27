@@ -30,6 +30,11 @@ export const api = {
     request<Tournament>("/tournaments", { method: "POST", body: JSON.stringify(input) }),
   getTournament: (id: string) => request<Tournament>(`/tournaments/${id}`),
   deleteTournament: (id: string) => request<void>(`/tournaments/${id}`, { method: "DELETE" }),
+  listPapelera: () => request<Tournament[]>("/tournaments-papelera"),
+  restoreTournament: (id: string) =>
+    request<Tournament>(`/tournaments/${id}/restaurar`, { method: "POST" }),
+  deleteTournamentForever: (id: string) =>
+    request<void>(`/tournaments/${id}/definitivo`, { method: "DELETE" }),
 
   listPlayers: (tournamentId: string) => request<Player[]>(`/tournaments/${tournamentId}/players`),
   addPlayer: (tournamentId: string, input: { lastName: string; firstName?: string; rating?: number | null }) =>

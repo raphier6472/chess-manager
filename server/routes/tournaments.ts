@@ -15,6 +15,7 @@ interface TournamentRow {
   date: string;
   num_rounds: number;
   status: string;
+  deleted_at: string | null;
 }
 
 function toTournament(row: TournamentRow): Tournament {
@@ -24,12 +25,32 @@ function toTournament(row: TournamentRow): Tournament {
     date: row.date,
     numRounds: row.num_rounds,
     status: row.status as Tournament["status"],
+    deletedAt: row.deleted_at,
   };
+}
+
+/**
+ * Un torneo en la papelera se comporta como inexistente para todo el resto de la API:
+ * no aparece en listados, ni en sus jugadores, rondas o posiciones. Solo la papelera
+ * y la restauración lo ven.
+ */
+export function findActiveTournament(id: string): TournamentRow | undefined {
+  return db
+    .prepare("SELECT * FROM tournaments WHERE id = ? AND deleted_at IS NULL")
+    .get(id) as TournamentRow | undefined;
 }
 
 router.get("/tournaments", (_req, res) => {
   const rows = db
-    .prepare("SELECT * FROM tournaments ORDER BY date DESC, name")
+    .prepare("SELECT * FROM tournaments WHERE deleted_at IS NULL ORDER BY date DESC, name")
+    .all() as TournamentRow[];
+  res.json(rows.map(toTournament));
+});
+
+/** Papelera: solo el organizador puede ver lo que se borró. */
+router.get("/tournaments-papelera", requireAuth, (_req, res) => {
+  const rows = db
+    .prepare("SELECT * FROM tournaments WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
     .all() as TournamentRow[];
   res.json(rows.map(toTournament));
 });
@@ -57,30 +78,59 @@ router.post("/tournaments", requireAuth, (req, res) => {
 });
 
 router.get("/tournaments/:id", (req, res) => {
-  const row = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(req.params.id) as
-    | TournamentRow
-    | undefined;
+  const row = findActiveTournament(req.params.id);
   if (!row) return res.status(404).json({ error: "no se encontró el torneo" });
   res.json(toTournament(row));
 });
 
+/**
+ * Envía el torneo a la papelera. Se permite en cualquier estado, incluso en curso: si no,
+ * un torneo de prueba ya arrancado quedaría imposible de limpiar. Es reversible, así que
+ * un clic equivocado no destruye un evento entero.
+ */
 router.delete("/tournaments/:id", requireAuth, (req, res) => {
-  const row = db.prepare("SELECT status FROM tournaments WHERE id = ?").get(req.params.id) as
-    | { status: string }
-    | undefined;
+  const row = findActiveTournament(req.params.id);
   if (!row) return res.status(404).json({ error: "no se encontró el torneo" });
-  // Se puede borrar en cualquier estado, incluso en curso: si no, un torneo de prueba
-  // que ya arrancó queda imposible de limpiar. La protección contra el borrado
-  // accidental vive en la confirmación reforzada de la UI (ver TournamentShell.tsx),
-  // no en una guarda de servidor que dejaba datos huérfanos sin salida.
+  db.prepare("UPDATE tournaments SET deleted_at = ? WHERE id = ?").run(
+    new Date().toISOString(),
+    req.params.id,
+  );
+  res.status(204).end();
+});
+
+/** Saca el torneo de la papelera y lo devuelve tal como estaba. */
+router.post("/tournaments/:id/restaurar", requireAuth, (req, res) => {
+  const row = db
+    .prepare("SELECT * FROM tournaments WHERE id = ? AND deleted_at IS NOT NULL")
+    .get(req.params.id) as TournamentRow | undefined;
+  if (!row) return res.status(404).json({ error: "no se encontró el torneo en la papelera" });
+  db.prepare("UPDATE tournaments SET deleted_at = NULL WHERE id = ?").run(req.params.id);
+  const restored = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(req.params.id) as TournamentRow;
+  res.json(toTournament(restored));
+});
+
+/**
+ * Borrado definitivo: solo desde la papelera, para vaciarla. Exigir que el torneo ya esté
+ * en la papelera obliga a dos acciones separadas antes de perder los datos de verdad.
+ */
+router.delete("/tournaments/:id/definitivo", requireAuth, (req, res) => {
+  const row = db
+    .prepare("SELECT id FROM tournaments WHERE id = ? AND deleted_at IS NOT NULL")
+    .get(req.params.id) as { id: string } | undefined;
+  if (!row) {
+    return res.status(409).json({
+      error: "solo se puede eliminar definitivamente un torneo que esté en la papelera",
+    });
+  }
   db.prepare("DELETE FROM tournaments WHERE id = ?").run(req.params.id);
   res.status(204).end();
 });
 
 router.get("/tournaments/:id/standings", (req, res) => {
   const tournamentId = req.params.id;
-  const tournament = db.prepare("SELECT id FROM tournaments WHERE id = ?").get(tournamentId);
-  if (!tournament) return res.status(404).json({ error: "no se encontró el torneo" });
+  if (!findActiveTournament(tournamentId)) {
+    return res.status(404).json({ error: "no se encontró el torneo" });
+  }
 
   const playerRows = db
     .prepare("SELECT id, last_name, first_name FROM players WHERE tournament_id = ?")

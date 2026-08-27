@@ -41,8 +41,9 @@ La interfaz está en español.
 - Cargar resultados (1-0, ½-½, 0-1) directamente sobre cada mesa.
 - **Reabrir la última ronda cerrada** para corregir un resultado mal cargado, mientras
   todavía no se haya emparejado la ronda siguiente.
-- Eliminar un torneo en cualquier estado (avisa cuántas rondas y resultados se pierden si
-  todavía está en curso).
+- Enviar un torneo a la **papelera** en cualquier estado, y restaurarlo después. Borrar un
+  torneo por accidente perdería un evento entero, así que el borrado normal es reversible;
+  eliminarlo de verdad exige entrar a la papelera y confirmarlo por separado.
 
 **Para el público (sin necesidad de entrar)**
 
@@ -262,7 +263,10 @@ Base: `/api`. Los endpoints marcados con 🔒 exigen sesión de organizador.
 | `GET` | `/tournaments` | Lista los torneos. |
 | `POST` | 🔒 `/tournaments` | Crea un torneo. Cuerpo: `{ name, date, numRounds }`. |
 | `GET` | `/tournaments/:id` | Datos de un torneo. |
-| `DELETE` | 🔒 `/tournaments/:id` | Elimina el torneo y todo su contenido. |
+| `DELETE` | 🔒 `/tournaments/:id` | Envía el torneo a la papelera (reversible). |
+| `GET` | 🔒 `/tournaments-papelera` | Lista los torneos en la papelera. |
+| `POST` | 🔒 `/tournaments/:id/restaurar` | Saca el torneo de la papelera. |
+| `DELETE` | 🔒 `/tournaments/:id/definitivo` | Borra el torneo y todo su contenido. Solo si ya está en la papelera. |
 | `GET` | `/tournaments/:id/standings` | Posiciones con Buchholz y Sonneborn-Berger. |
 | `GET` | `/tournaments/:id/players` | Lista de inscritos. |
 | `POST` | 🔒 `/tournaments/:id/players` | Inscribe un jugador. Cuerpo: `{ lastName, firstName?, rating? }`. |

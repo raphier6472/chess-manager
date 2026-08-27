@@ -67,6 +67,10 @@ Estas restricciones existen por una razón y romperlas corrompe torneos:
 3. **Un jugador retirado sale de los emparejamientos pero conserva sus puntos.** Retirarse
    no borra la historia de lo que ya jugó.
 4. **Los byes no cuentan como rival** para Buchholz ni Sonneborn-Berger.
+5. **Borrar un torneo es reversible.** El borrado normal lo envía a la papelera; un torneo en
+   la papelera se comporta como inexistente para toda la API pública (no aparece en listados
+   ni responde por sus jugadores, rondas o posiciones). El borrado definitivo exige que ya
+   esté en la papelera: son dos acciones separadas antes de perder datos de verdad.
 
 ## Pruebas
 

@@ -10,6 +10,8 @@ export interface Tournament {
   date: string;
   numRounds: number;
   status: TournamentStatus;
+  /** Fecha ISO en que se envió a la papelera; null si está activo. */
+  deletedAt: string | null;
 }
 
 export interface Player {

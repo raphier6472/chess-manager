@@ -42,6 +42,11 @@ function toPlayer(row: PlayerRow): Player {
 }
 
 router.get("/tournaments/:tournamentId/players", (req, res) => {
+  const activo = db
+    .prepare("SELECT id FROM tournaments WHERE id = ? AND deleted_at IS NULL")
+    .get(req.params.tournamentId);
+  if (!activo) return res.status(404).json({ error: "no se encontró el torneo" });
+
   const rows = db
     .prepare(
       "SELECT * FROM players WHERE tournament_id = ? ORDER BY rating IS NULL, rating DESC, last_name, first_name",
@@ -51,7 +56,9 @@ router.get("/tournaments/:tournamentId/players", (req, res) => {
 });
 
 router.post("/tournaments/:tournamentId/players", requireAuth, (req, res) => {
-  const tournament = db.prepare("SELECT id FROM tournaments WHERE id = ?").get(req.params.tournamentId);
+  const tournament = db
+    .prepare("SELECT id FROM tournaments WHERE id = ? AND deleted_at IS NULL")
+    .get(req.params.tournamentId);
   if (!tournament) return res.status(404).json({ error: "no se encontró el torneo" });
 
   const { lastName, firstName, rating } = req.body ?? {};

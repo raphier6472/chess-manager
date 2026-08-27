@@ -40,6 +40,11 @@ function toMatch(row: MatchRow): Match {
 }
 
 router.get("/tournaments/:tournamentId/rounds", (req, res) => {
+  const activo = db
+    .prepare("SELECT id FROM tournaments WHERE id = ? AND deleted_at IS NULL")
+    .get(req.params.tournamentId);
+  if (!activo) return res.status(404).json({ error: "no se encontró el torneo" });
+
   const rounds = db
     .prepare("SELECT * FROM rounds WHERE tournament_id = ? ORDER BY number")
     .all(req.params.tournamentId) as RoundRow[];
@@ -52,9 +57,9 @@ router.get("/tournaments/:tournamentId/rounds", (req, res) => {
 
 router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res) => {
   const tournamentId = req.params.tournamentId;
-  const tournament = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(tournamentId) as
-    | { id: string; num_rounds: number; status: string }
-    | undefined;
+  const tournament = db
+    .prepare("SELECT * FROM tournaments WHERE id = ? AND deleted_at IS NULL")
+    .get(tournamentId) as { id: string; num_rounds: number; status: string } | undefined;
   if (!tournament) return res.status(404).json({ error: "no se encontró el torneo" });
 
   const existingRounds = db

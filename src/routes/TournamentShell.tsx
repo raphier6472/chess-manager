@@ -38,24 +38,25 @@ export default function TournamentShell() {
 
   /** Un torneo en curso pierde partidas ya jugadas: la confirmación dice cuántas. */
   const confirmMessage = async () => {
-    const base = `¿Eliminar "${tournament.name}" y todos sus datos?`;
+    const base =
+      `¿Enviar "${tournament.name}" a la papelera?\n\n` +
+      `Se puede restaurar después desde la lista de torneos.`;
     if (tournament.status !== "active" || !tournamentId) return base;
     try {
       const rounds = await api.listRounds(tournamentId);
       // Solo resultados que cargó el organizador: el bye lo asigna el sistema al
-      // emparejar, contarlo acá inflaría el número y confundiría el aviso.
+      // emparejar, contarlo aquí inflaría el número y confundiría el aviso.
       const played = rounds.reduce(
         (n, r) => n + r.matches.filter((m) => m.blackId !== null && m.result !== "unplayed").length,
         0,
       );
       return (
         `El torneo "${tournament.name}" está EN CURSO.\n\n` +
-        `Se van a borrar ${rounds.length} ronda(s) y ${played} resultado(s) ya cargados.\n\n` +
-        `Esta acción no se puede deshacer. ¿Eliminarlo igual?`
+        `Se van a guardar en la papelera ${rounds.length} ronda(s) y ${played} resultado(s) ya cargados.\n\n` +
+        `Se puede restaurar después desde la lista de torneos. ¿Continuar?`
       );
     } catch {
-      // Si no se pueden contar las rondas, igual se avisa que está en curso.
-      return `El torneo "${tournament.name}" está EN CURSO y se perderán sus rondas.\n\n${base}`;
+      return `El torneo "${tournament.name}" está EN CURSO.\n\n${base}`;
     }
   };
 
@@ -85,7 +86,7 @@ export default function TournamentShell() {
         {isOrganizer && (
           <div>
             <button type="button" className="btn btn--danger btn--sm" onClick={removeTournament}>
-              Eliminar torneo
+              Enviar a la papelera
             </button>
             {deleteError && <p className="form-error">{deleteError}</p>}
           </div>

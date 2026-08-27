@@ -17,7 +17,11 @@ db.exec(`
     name TEXT NOT NULL,
     date TEXT NOT NULL,
     num_rounds INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'setup'
+    status TEXT NOT NULL DEFAULT 'setup',
+    -- Papelera: fecha ISO en que se envió a la papelera, NULL si está activo.
+    -- Borrar un torneo por accidente perdía un evento entero, así que el borrado
+    -- normal es reversible y el definitivo es una acción aparte.
+    deleted_at TEXT
   );
 
   CREATE TABLE IF NOT EXISTS players (
@@ -59,6 +63,12 @@ db.exec(`
 // Migration: split the old single "name" column into last_name/first_name.
 // Pairing and standings sort surname-first, so the split has to be real
 // columns rather than parsed out of a free-text name at query time.
+// Migración: bases creadas antes de la papelera no tienen deleted_at.
+const tournamentColumns = db.prepare("PRAGMA table_info(tournaments)").all() as Array<{ name: string }>;
+if (!tournamentColumns.some((c) => c.name === "deleted_at")) {
+  db.exec("ALTER TABLE tournaments ADD COLUMN deleted_at TEXT");
+}
+
 const playerColumns = db.prepare("PRAGMA table_info(players)").all() as Array<{ name: string }>;
 const hasOldNameColumn = playerColumns.some((c) => c.name === "name");
 const hasLastNameColumn = playerColumns.some((c) => c.name === "last_name");

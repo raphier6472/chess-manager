@@ -15,15 +15,43 @@ export default function TournamentList() {
   const [tournaments, setTournaments] = useState<Tournament[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [papelera, setPapelera] = useState<Tournament[]>([]);
+  const [showPapelera, setShowPapelera] = useState(false);
 
   const load = () => {
     api
       .listTournaments()
       .then(setTournaments)
       .catch((e) => setError(e.message));
+    // La papelera solo la ve el organizador; el render ya está protegido por isOrganizer,
+    // así que no hace falta limpiarla al cerrar sesión.
+    if (isOrganizer) {
+      api.listPapelera().then(setPapelera).catch(() => setPapelera([]));
+    }
   };
 
-  useEffect(load, []);
+  useEffect(load, [isOrganizer]);
+
+  const restaurar = async (t: Tournament) => {
+    setError(null);
+    try {
+      await api.restoreTournament(t.id);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const borrarDefinitivo = async (t: Tournament) => {
+    if (!confirm(`¿Eliminar "${t.name}" para siempre?\n\nEsta acción no se puede deshacer.`)) return;
+    setError(null);
+    try {
+      await api.deleteTournamentForever(t.id);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   return (
     <div className="stack">
@@ -70,6 +98,44 @@ export default function TournamentList() {
             </li>
           ))}
         </ul>
+      )}
+
+      {isOrganizer && papelera.length > 0 && (
+        <div>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            aria-expanded={showPapelera}
+            onClick={() => setShowPapelera((v) => !v)}
+          >
+            {showPapelera ? "Ocultar papelera" : `Papelera (${papelera.length})`}
+          </button>
+
+          {showPapelera && (
+            <ul className="tournament-list" style={{ marginTop: "0.75rem" }}>
+              {papelera.map((t) => (
+                <li key={t.id} className="card">
+                  <div className="tournament-row">
+                    <div>
+                      <div className="tournament-row__name">{t.name}</div>
+                      <div className="tournament-row__meta">
+                        {t.date} · {t.numRounds} rondas · en la papelera
+                      </div>
+                    </div>
+                    <div className="form-row" style={{ gap: "0.4rem" }}>
+                      <button type="button" className="btn btn--felt btn--sm" onClick={() => restaurar(t)}>
+                        Restaurar
+                      </button>
+                      <button type="button" className="btn btn--danger btn--sm" onClick={() => borrarDefinitivo(t)}>
+                        Eliminar para siempre
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );
