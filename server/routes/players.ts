@@ -118,12 +118,17 @@ router.delete("/players/:id", requireAuth, (req, res) => {
     | undefined;
   if (!player) return res.status(404).json({ error: "no se encontró el jugador" });
 
-  const tournament = db
-    .prepare("SELECT status FROM tournaments WHERE id = ?")
-    .get(player.tournament_id) as { status: string } | undefined;
-  if (tournament && tournament.status !== "setup") {
+  // El límite real no es el estado del torneo sino si el jugador ya tiene alguna partida
+  // registrada: borrarlo ahí rompería la historia de esa ronda y las posiciones que se
+  // calcularon con ella. Un jugador agregado por error después de emparejar (o que nunca
+  // llegó a jugar) no tiene ese problema y antes quedaba atrapado sin poder sacarlo, solo
+  // "retirar" — que lo deja para siempre en la lista con el nombre mal cargado.
+  const hasMatches = db
+    .prepare("SELECT 1 FROM matches WHERE white_id = ? OR black_id = ? LIMIT 1")
+    .get(player.id, player.id);
+  if (hasMatches) {
     return res.status(409).json({
-      error: "no se puede quitar un jugador con el torneo empezado; retíralo en su lugar",
+      error: "no se puede quitar un jugador que ya tiene partidas registradas; retíralo en su lugar",
     });
   }
 

@@ -337,6 +337,37 @@ describe("rate-limit del login", () => {
   });
 });
 
+describe("borrar jugadores", () => {
+  it("deja borrar a un jugador agregado después de emparejar la ronda 1, mientras no tenga partidas", async () => {
+    // Reporte real de un torneo en curso: un jugador cargado por error después de
+    // emparejar la ronda 1 quedaba atrapado sin poder sacarlo (antes el bloqueo era por
+    // estado del torneo, no por si ese jugador en particular había jugado algo).
+    const agent = await organizer();
+    const tournamentId = await seedTournament(agent, "Borrar tras emparejar");
+    await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+
+    const tarde = await agent
+      .post(`/api/tournaments/${tournamentId}/players`)
+      .send({ lastName: "Tarde" });
+    expect(tarde.status).toBe(201);
+
+    expect((await agent.delete(`/api/players/${tarde.body.id}`)).status).toBe(204);
+    const jugadores = await request(app).get(`/api/tournaments/${tournamentId}/players`);
+    expect(jugadores.body.some((p: { id: string }) => p.id === tarde.body.id)).toBe(false);
+  });
+
+  it("no deja borrar a un jugador que ya tiene partidas, aunque esté en curso", async () => {
+    const agent = await organizer();
+    const tournamentId = await seedTournament(agent, "No borrar con partidas");
+    const round = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    const whiteId = round.body.matches[0].whiteId as string;
+
+    const res = await agent.delete(`/api/players/${whiteId}`);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("retíralo en su lugar");
+  });
+});
+
 describe("rutas /api no reconocidas", () => {
   it("devuelve 404 JSON en vez de caer en el catch-all de la SPA", async () => {
     // Regresión: el catch-all app.get(/.*/, ...) para servir la SPA en producción

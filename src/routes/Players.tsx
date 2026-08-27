@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useOutletContext, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { formatPlayerName, type Player } from "../types";
-import type { TournamentContext } from "./TournamentShell";
 
 export default function Players() {
   const { isOrganizer } = useAuth();
   const { tournamentId } = useParams<{ tournamentId: string }>();
-  const { tournament } = useOutletContext<TournamentContext>();
   const [players, setPlayers] = useState<Player[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastName, setLastName] = useState("");
@@ -97,8 +95,6 @@ export default function Players() {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
-
-  const canDelete = tournament.status === "setup";
 
   return (
     <div className="stack">
@@ -202,7 +198,7 @@ export default function Players() {
                         ))}
                     </td>
                     <td>
-                      {isOrganizer && !isEditing && canDelete && (
+                      {isOrganizer && !isEditing && (
                         <button type="button" className="btn btn--danger btn--sm" onClick={() => remove(p)}>
                           Quitar
                         </button>
