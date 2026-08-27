@@ -40,6 +40,12 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'pending'
   );
 
+  -- Un torneo nunca puede tener dos rondas con el mismo número. Hoy no es explotable
+  -- (todo el servidor corre en un único proceso Node sin async/await, así que dos
+  -- peticiones nunca se intercalan dentro del handler), pero documenta la invariante
+  -- en el esquema y protege de verdad si algún día se despliega con más de un proceso.
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_rounds_tournament_number ON rounds(tournament_id, number);
+
   CREATE TABLE IF NOT EXISTS matches (
     id TEXT PRIMARY KEY,
     round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,

@@ -176,7 +176,17 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
     }
     setTournamentActive.run(tournamentId);
   });
-  tx();
+  try {
+    tx();
+  } catch (err) {
+    // idx_rounds_tournament_number: no debería poder saltar en el modelo actual
+    // (todo el servidor es síncrono, un solo proceso), pero si algún día deja de serlo,
+    // que falle con un 409 claro y no con un 500 crudo de SQLite.
+    if (err instanceof Error && "code" in err && err.code === "SQLITE_CONSTRAINT_UNIQUE") {
+      return res.status(409).json({ error: "ya se generó esa ronda, recarga la página" });
+    }
+    throw err;
+  }
 
   const roundRow = db.prepare("SELECT * FROM rounds WHERE id = ?").get(roundId) as RoundRow;
   const matchRows = db.prepare("SELECT * FROM matches WHERE round_id = ?").all(roundId) as MatchRow[];

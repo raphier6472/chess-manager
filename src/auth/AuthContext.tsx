@@ -18,6 +18,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api
       .me()
       .then((r) => setIsOrganizer(r.authenticated))
+      // Un fallo de red o un 500 acá no debe quedar como unhandled rejection: se trata
+      // como "no autenticado", igual que hace el servidor cuando no hay sesión válida.
+      .catch(() => setIsOrganizer(false))
       .finally(() => setLoading(false));
   }, []);
 

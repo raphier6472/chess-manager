@@ -337,6 +337,35 @@ describe("rate-limit del login", () => {
   });
 });
 
+describe("rutas /api no reconocidas", () => {
+  it("devuelve 404 JSON en vez de caer en el catch-all de la SPA", async () => {
+    // Regresión: el catch-all app.get(/.*/, ...) para servir la SPA en producción
+    // matcheaba también /api/* sin ruta, devolviendo 200 con el HTML de index.html.
+    const res = await request(app).get("/api/esto-no-existe");
+    expect(res.status).toBe(404);
+    expect(res.type).toBe("application/json");
+  });
+});
+
+describe("índice único de rondas", () => {
+  it("la base rechaza dos rondas con el mismo número para el mismo torneo", async () => {
+    // Defensa en profundidad: hoy el servidor es síncrono y de un solo proceso, así que
+    // esto no es explotable vía HTTP (ver el 409 en rounds.ts), pero el esquema debe
+    // impedirlo igual si algún día deja de serlo.
+    const { db } = await import("../db");
+    const agent = await organizer();
+    const tournamentId = await seedTournament(agent, "Índice único");
+    const round = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    expect(round.status).toBe(201);
+
+    expect(() =>
+      db
+        .prepare("INSERT INTO rounds (id, tournament_id, number, status) VALUES (?, ?, ?, 'paired')")
+        .run("otro-id-cualquiera", tournamentId, round.body.number),
+    ).toThrow(/UNIQUE constraint failed/);
+  });
+});
+
 describe("headers de seguridad", () => {
   it("manda CSP y anti-clickjacking, y no expone X-Powered-By", async () => {
     const res = await request(app).get("/api/tournaments");

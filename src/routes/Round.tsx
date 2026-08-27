@@ -33,7 +33,12 @@ export default function RoundPage() {
   const [players, setPlayers] = useState<Player[] | null>(null);
   const [standings, setStandings] = useState<StandingsRow[] | null>(null);
   const [viewedNumber, setViewedNumber] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Separados como en TournamentShell.tsx: loadError bloquea toda la vista (no hay nada
+  // que mostrar sin datos), actionError se muestra sin ocultar la ronda que ya está en
+  // pantalla. Antes eran un único estado y un error de "cargar resultado" tapaba todo
+  // el tablero con solo un mensaje.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = () => {
@@ -45,7 +50,7 @@ export default function RoundPage() {
         setStandings(s);
         setViewedNumber((current) => current ?? (r.length ? r[r.length - 1].number : null));
       },
-      (e) => setError(e.message),
+      (e) => setLoadError(e.message),
     );
   };
 
@@ -62,6 +67,10 @@ export default function RoundPage() {
     return (id: string): BoardPlayer => m.get(id) ?? { name: "?", rating: null, score: 0 };
   }, [players, standings]);
 
+  // El error de carga va primero: si alguna de las tres peticiones falla (sesión vencida,
+  // 500 de standings), rounds/players/standings quedan en null para siempre y el return de
+  // abajo dejaba la pestaña en blanco sin mensaje ni forma de reintentar.
+  if (loadError) return <p className="form-error">{loadError}</p>;
   if (!rounds || !players || !standings) return null;
 
   const latest = rounds[rounds.length - 1] ?? null;
@@ -73,7 +82,7 @@ export default function RoundPage() {
 
   const generate = async () => {
     if (!tournamentId) return;
-    setError(null);
+    setActionError(null);
     setBusy(true);
     try {
       const round = await api.generateRound(tournamentId);
@@ -81,32 +90,32 @@ export default function RoundPage() {
       load();
       reloadTournament();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
   };
 
   const submitResult = async (matchId: string, result: "white" | "draw" | "black") => {
-    setError(null);
+    setActionError(null);
     try {
       await api.submitResult(matchId, result);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     }
   };
 
   const completeRound = async () => {
     if (!viewed) return;
-    setError(null);
+    setActionError(null);
     setBusy(true);
     try {
       await api.completeRound(viewed.id);
       load();
       reloadTournament();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -115,14 +124,14 @@ export default function RoundPage() {
   const reopenRound = async () => {
     if (!viewed) return;
     if (!confirm(`¿Reabrir la ronda ${viewed.number} para corregir un resultado?`)) return;
-    setError(null);
+    setActionError(null);
     setBusy(true);
     try {
       await api.reopenRound(viewed.id);
       load();
       reloadTournament();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -208,7 +217,7 @@ export default function RoundPage() {
         </div>
       )}
 
-      {error && <p className="form-error">{error}</p>}
+      {actionError && <p className="form-error">{actionError}</p>}
     </div>
   );
 }

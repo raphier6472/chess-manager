@@ -83,6 +83,13 @@ export function createApp() {
   app.use("/api", playersRouter);
   app.use("/api", roundsRouter);
 
+  // Sin esto, una ruta /api/* que ningún router reconoce cae en el catch-all de la SPA de
+  // abajo y responde 200 con index.html en vez de un 404 — el cliente ve "éxito" con HTML
+  // donde esperaba JSON.
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ error: "no se encontró el recurso" });
+  });
+
   if (process.env.NODE_ENV === "production") {
     const distDir = path.join(__dirname, "..", "dist");
     app.use(express.static(distDir));

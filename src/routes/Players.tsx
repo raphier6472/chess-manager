@@ -53,8 +53,13 @@ export default function Players() {
   };
 
   const toggleWithdrawn = async (p: Player) => {
-    await api.updatePlayer(p.id, { withdrawn: !p.withdrawn });
-    load();
+    setError(null);
+    try {
+      await api.updatePlayer(p.id, { withdrawn: !p.withdrawn });
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const startEdit = (p: Player) => {
