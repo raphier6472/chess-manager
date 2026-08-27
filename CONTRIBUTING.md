@@ -41,6 +41,10 @@ npm test
 ```
 
 `npm run build` corre `tsc -b`, así que un error de tipos rompe la compilación. No lo saltes.
+Comprueba los tres proyectos: la interfaz (`src`), la configuración de Vite y **el servidor**
+(`server` y `shared`). Si añades un `tsconfig` nuevo, referencíalo desde `tsconfig.json` o
+quedará sin comprobar: producción corre con `tsx`, que quita los tipos sin validarlos, así que
+lo que no revise `tsc` revienta en tiempo de ejecución.
 
 ## Estilo de código
 

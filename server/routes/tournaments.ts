@@ -34,7 +34,7 @@ function toTournament(row: TournamentRow): Tournament {
  * no aparece en listados, ni en sus jugadores, rondas o posiciones. Solo la papelera
  * y la restauración lo ven.
  */
-export function findActiveTournament(id: string): TournamentRow | undefined {
+export function findActiveTournament(id: string | string[]): TournamentRow | undefined {
   return db
     .prepare("SELECT * FROM tournaments WHERE id = ? AND deleted_at IS NULL")
     .get(id) as TournamentRow | undefined;

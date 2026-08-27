@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import "./db";
+import { parseStoredHash } from "./auth/password";
 import tournamentsRouter from "./routes/tournaments";
 import playersRouter from "./routes/players";
 import roundsRouter from "./routes/rounds";
@@ -60,11 +61,20 @@ export function createApp() {
   }
   app.use(cookieParser(cookieSecret ?? crypto.randomBytes(32).toString("hex")));
 
-  if (!process.env.ORGANIZER_PASSWORD_HASH) {
+  const storedHash = process.env.ORGANIZER_PASSWORD_HASH;
+  if (!storedHash) {
     console.warn(
       "[chess-manager] ORGANIZER_PASSWORD_HASH no está seteada: el login del organizador " +
         "estará deshabilitado (la app sigue funcionando en modo solo lectura). " +
-        "Generala con: npm run hash-password",
+        "Génerala con: npm run hash-password",
+    );
+  } else if (!parseStoredHash(storedHash)) {
+    // Antes solo se comprobaba que la variable existiera. Un hash cortado al pegarlo en el
+    // unit de systemd pasaba desapercibido, y el login quedaba roto sin que nadie lo notara.
+    console.error(
+      "[chess-manager] ORGANIZER_PASSWORD_HASH tiene un formato inválido: el login del " +
+        "organizador queda DESHABILITADO. Suele pasar por un pegado cortado o partido en " +
+        "varias líneas. Regénerala con: npm run hash-password",
     );
   }
 
