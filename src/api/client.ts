@@ -50,10 +50,16 @@ export const api = {
 
   listRounds: (tournamentId: string) =>
     request<RoundWithMatches[]>(`/tournaments/${tournamentId}/rounds`),
-  generateRound: (tournamentId: string) =>
-    request<RoundWithMatches>(`/tournaments/${tournamentId}/rounds/generate`, { method: "POST" }),
-  submitResult: (matchId: string, result: "white" | "black" | "draw") =>
-    request<Match>(`/matches/${matchId}/result`, { method: "POST", body: JSON.stringify({ result }) }),
+  generateRound: (tournamentId: string, byePlayerIds: string[] = []) =>
+    request<RoundWithMatches>(`/tournaments/${tournamentId}/rounds/generate`, {
+      method: "POST",
+      body: JSON.stringify({ byePlayerIds }),
+    }),
+  submitResult: (matchId: string, result: "white" | "black" | "draw", forfeit = false) =>
+    request<Match>(`/matches/${matchId}/result`, {
+      method: "POST",
+      body: JSON.stringify({ result, forfeit }),
+    }),
   completeRound: (roundId: string) => request<Round>(`/rounds/${roundId}/complete`, { method: "POST" }),
   reopenRound: (roundId: string) => request<Round>(`/rounds/${roundId}/reopen`, { method: "POST" }),
 

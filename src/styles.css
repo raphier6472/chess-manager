@@ -578,11 +578,45 @@ table.data td input:focus {
 
 /* Result picker: real chess score notation as the control itself. */
 
+.result-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
 .result-picker {
   display: inline-flex;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   overflow: hidden;
+}
+
+.board-row__wo-badge {
+  font-size: 0.68rem;
+}
+
+/* Forfeit (W.O.): secondary, out-of-the-way controls so they never compete
+   visually with the three real-result buttons above them. */
+.result-picker-wo {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.result-picker-wo button {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.result-picker-wo button:hover {
+  background: var(--signal-soft);
+  color: var(--ink);
 }
 
 .result-picker button {
@@ -630,9 +664,13 @@ table.data td input:focus {
     grid-row: 1;
   }
 
-  .board-row:not(.board-row--bye) .result-picker {
+  .board-row:not(.board-row--bye) .result-cell {
     grid-column: 1 / -1;
     grid-row: 2;
+    width: 100%;
+  }
+
+  .board-row:not(.board-row--bye) .result-picker {
     width: 100%;
   }
 
@@ -660,6 +698,23 @@ table.data td input:focus {
 .hint {
   color: var(--ink-soft);
   font-size: 0.85rem;
+}
+
+.bye-picker {
+  margin-bottom: 0.75rem;
+}
+
+.bye-picker summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.bye-picker__option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
 }
 
 .round-banner {

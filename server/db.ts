@@ -51,7 +51,11 @@ db.exec(`
     round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
     white_id TEXT NOT NULL REFERENCES players(id),
     black_id TEXT REFERENCES players(id),
-    result TEXT NOT NULL DEFAULT 'unplayed'
+    result TEXT NOT NULL DEFAULT 'unplayed',
+    -- Distingue un resultado cargado por incomparecencia (W.O.) de uno jugado. El
+    -- puntaje se cuenta igual (result ya dice quién gana); esto es solo para mostrarlo
+    -- distinto en el tablero y no confundirlo con una partida real.
+    forfeit INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE INDEX IF NOT EXISTS idx_players_tournament ON players(tournament_id);
@@ -98,4 +102,9 @@ if (hasOldNameColumn && !hasLastNameColumn) {
   migrate();
 
   db.exec("ALTER TABLE players DROP COLUMN name");
+}
+
+const matchColumns = db.prepare("PRAGMA table_info(matches)").all() as Array<{ name: string }>;
+if (!matchColumns.some((c) => c.name === "forfeit")) {
+  db.exec("ALTER TABLE matches ADD COLUMN forfeit INTEGER NOT NULL DEFAULT 0");
 }

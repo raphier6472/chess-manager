@@ -7,6 +7,7 @@ export interface PairingPlayer {
   colorBalance: number;
   opponents: ReadonlySet<string>;
   hadBye: boolean;
+  rating: number | null;
 }
 
 export interface PairingPair {
@@ -170,10 +171,18 @@ export function generatePairings(players: PairingPlayer[]): PairingResult {
   // Board order follows standard Swiss practice: the leading score group
   // sits on board 1, descending from there, so winners keep climbing to the
   // top boards each round instead of staying wherever they were paired.
+  // Within a tied score group (very common past round 1, whenever 4+
+  // players share the top score), the higher-rated pair goes to the lower
+  // board number: without this, pairs kept the arbitrary order the DB query
+  // happened to return them in, so the top seed could land on board 2 while
+  // a lower-rated pair sat on board 1.
   pairs.sort((a, b) => {
     const scoreA = Math.max(byId.get(a.white)!.score, byId.get(a.black)!.score);
     const scoreB = Math.max(byId.get(b.white)!.score, byId.get(b.black)!.score);
-    return scoreB - scoreA;
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    const ratingA = Math.max(byId.get(a.white)!.rating ?? -Infinity, byId.get(a.black)!.rating ?? -Infinity);
+    const ratingB = Math.max(byId.get(b.white)!.rating ?? -Infinity, byId.get(b.black)!.rating ?? -Infinity);
+    return ratingB - ratingA;
   });
 
   return { pairs, bye };

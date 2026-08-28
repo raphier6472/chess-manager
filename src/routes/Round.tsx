@@ -40,6 +40,10 @@ export default function RoundPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Bye manual: jugadores que el organizador saca a propósito del próximo emparejamiento
+  // (avisaron que no juegan esa ronda), en vez de depender del bye automático que solo
+  // sale cuando el número de activos es impar.
+  const [manualByeIds, setManualByeIds] = useState<string[]>([]);
 
   const load = () => {
     if (!tournamentId) return;
@@ -85,8 +89,9 @@ export default function RoundPage() {
     setActionError(null);
     setBusy(true);
     try {
-      const round = await api.generateRound(tournamentId);
+      const round = await api.generateRound(tournamentId, manualByeIds);
       setViewedNumber(round.number);
+      setManualByeIds([]);
       load();
       reloadTournament();
     } catch (err) {
@@ -96,10 +101,16 @@ export default function RoundPage() {
     }
   };
 
-  const submitResult = async (matchId: string, result: "white" | "draw" | "black") => {
+  const toggleManualBye = (playerId: string) => {
+    setManualByeIds((current) =>
+      current.includes(playerId) ? current.filter((id) => id !== playerId) : [...current, playerId],
+    );
+  };
+
+  const submitResult = async (matchId: string, result: "white" | "draw" | "black", forfeit = false) => {
     setActionError(null);
     try {
-      await api.submitResult(matchId, result);
+      await api.submitResult(matchId, result, forfeit);
       load();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -211,8 +222,28 @@ export default function RoundPage() {
 
       {isOrganizer && canGenerateNext && !tournamentDone && (
         <div>
+          {players.some((p) => !p.withdrawn) && (
+            <details className="bye-picker">
+              <summary>Bye manual (opcional)</summary>
+              <div className="stack" style={{ marginTop: "0.5rem" }}>
+                {players
+                  .filter((p) => !p.withdrawn)
+                  .map((p) => (
+                    <label key={p.id} className="bye-picker__option">
+                      <input
+                        type="checkbox"
+                        checked={manualByeIds.includes(p.id)}
+                        onChange={() => toggleManualBye(p.id)}
+                      />
+                      {formatPlayerName(p)}
+                    </label>
+                  ))}
+              </div>
+            </details>
+          )}
           <button type="button" className="btn btn--felt" disabled={busy} onClick={generate}>
             Emparejar ronda {rounds.length + 1}
+            {manualByeIds.length > 0 && ` (${manualByeIds.length} con bye manual)`}
           </button>
         </div>
       )}
@@ -235,7 +266,7 @@ function BoardRow({
   white: BoardPlayer;
   black: BoardPlayer | null;
   editable: boolean;
-  onSubmit: (matchId: string, result: "white" | "draw" | "black") => void;
+  onSubmit: (matchId: string, result: "white" | "draw" | "black", forfeit?: boolean) => void;
 }) {
   if (black === null) {
     return (
@@ -257,18 +288,45 @@ function BoardRow({
           <span className="board-row__player-meta">{playerMeta(white)}</span>
         </div>
       </div>
-      <div className="result-picker">
-        {RESULT_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            className={match.result === opt.value ? "selected" : ""}
-            disabled={!editable}
-            onClick={() => onSubmit(match.id, opt.value)}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <div className="result-cell">
+        <div className="result-picker">
+          {RESULT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={match.result === opt.value ? "selected" : ""}
+              disabled={!editable}
+              onClick={() => onSubmit(match.id, opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {match.forfeit && <span className="badge board-row__wo-badge">W.O.</span>}
+        {editable && (
+          <div className="result-picker-wo">
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`¿Blancas (${white.name}) no se presentaron? El punto es para negras.`)) {
+                  onSubmit(match.id, "black", true);
+                }
+              }}
+            >
+              Ausente: blancas
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`¿Negras (${black.name}) no se presentaron? El punto es para blancas.`)) {
+                  onSubmit(match.id, "white", true);
+                }
+              }}
+            >
+              Ausente: negras
+            </button>
+          </div>
+        )}
       </div>
       <div className="board-row__player board-row__player--black">
         <span className="piece-swatch piece-swatch--black" />

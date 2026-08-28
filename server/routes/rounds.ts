@@ -19,6 +19,7 @@ interface MatchRow {
   white_id: string;
   black_id: string | null;
   result: string;
+  forfeit: number;
 }
 
 function toRound(row: RoundRow): Round {
@@ -36,6 +37,7 @@ function toMatch(row: MatchRow): Match {
     whiteId: row.white_id,
     blackId: row.black_id,
     result: row.result as Match["result"],
+    forfeit: row.forfeit === 1,
   };
 }
 
@@ -83,17 +85,32 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
     return res.status(409).json({ error: "hacen falta al menos 2 jugadores activos para emparejar" });
   }
 
+  // Bye manual: el organizador puede sacar de antemano a uno o varios jugadores del
+  // emparejamiento de esta ronda (avisaron que no juegan) en vez de esperar a que les
+  // toque el bye automático por ser un número impar de activos.
+  const rawByeIds: unknown = req.body?.byePlayerIds;
+  const manualByeIds = Array.isArray(rawByeIds)
+    ? [...new Set(rawByeIds.filter((id): id is string => typeof id === "string"))]
+    : [];
+  const activeIds = new Set(players.map((p) => p.id));
+  if (manualByeIds.some((id) => !activeIds.has(id))) {
+    return res.status(400).json({ error: "el bye manual solo se puede dar a jugadores activos del torneo" });
+  }
+  const manualByeSet = new Set(manualByeIds);
+
   let pairs: PairingPair[];
   let bye: string | null;
 
   if (existingRounds.length === 0) {
     // Round 1: standard Swiss fold seeding by rating (see generateInitialPairings).
-    const seedPlayers = players.map((p) => ({
-      id: p.id,
-      lastName: p.last_name,
-      firstName: p.first_name,
-      rating: p.rating,
-    }));
+    const seedPlayers = players
+      .filter((p) => !manualByeSet.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        lastName: p.last_name,
+        firstName: p.first_name,
+        rating: p.rating,
+      }));
     ({ pairs, bye } = generateInitialPairings(seedPlayers));
   } else {
     const matches = db
@@ -142,13 +159,16 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
       }
     }
 
-    const pairingPlayers: PairingPlayer[] = players.map((p) => ({
-      id: p.id,
-      score: scoreOf.get(p.id) ?? 0,
-      colorBalance: colorBalanceOf.get(p.id) ?? 0,
-      opponents: opponentsOf.get(p.id) ?? new Set(),
-      hadBye: hadByeOf.get(p.id) ?? false,
-    }));
+    const pairingPlayers: PairingPlayer[] = players
+      .filter((p) => !manualByeSet.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        score: scoreOf.get(p.id) ?? 0,
+        colorBalance: colorBalanceOf.get(p.id) ?? 0,
+        opponents: opponentsOf.get(p.id) ?? new Set(),
+        hadBye: hadByeOf.get(p.id) ?? false,
+        rating: p.rating,
+      }));
 
     ({ pairs, bye } = generatePairings(pairingPlayers));
   }
@@ -166,13 +186,18 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
     "UPDATE tournaments SET status = 'active' WHERE id = ? AND status = 'setup'",
   );
 
+  // El bye automático (número impar de jugadores emparejables) y los byes manuales
+  // nunca se pisan: los manuales ya quedaron afuera del algoritmo de emparejamiento.
+  const byeIds = new Set(manualByeIds);
+  if (bye) byeIds.add(bye);
+
   const tx = db.transaction(() => {
     insertRound.run(roundId, tournamentId, roundNumber);
     for (const pair of pairs) {
       insertMatch.run(nanoid(), roundId, pair.white, pair.black, "unplayed");
     }
-    if (bye) {
-      insertMatch.run(nanoid(), roundId, bye, null, "bye");
+    for (const id of byeIds) {
+      insertMatch.run(nanoid(), roundId, id, null, "bye");
     }
     setTournamentActive.run(tournamentId);
   });
@@ -212,11 +237,20 @@ router.post("/matches/:id/result", requireAuth, (req, res) => {
       .status(409)
       .json({ error: "no se puede cambiar el resultado de una ronda ya cerrada" });
   }
-  const { result } = req.body ?? {};
+  const { result, forfeit } = req.body ?? {};
   if (!["white", "black", "draw"].includes(result)) {
     return res.status(400).json({ error: "el resultado debe ser 1-0, ½-½ o 0-1" });
   }
-  db.prepare("UPDATE matches SET result = ? WHERE id = ?").run(result, match.id);
+  // Un empate por incomparecencia no existe: si nadie se presentó no hay resultado que
+  // cargar (la mesa queda "unplayed" hasta que alguien la resuelva a mano).
+  if (forfeit && result === "draw") {
+    return res.status(400).json({ error: "un W.O. no puede ser tablas" });
+  }
+  db.prepare("UPDATE matches SET result = ?, forfeit = ? WHERE id = ?").run(
+    result,
+    forfeit ? 1 : 0,
+    match.id,
+  );
   const updated = db.prepare("SELECT * FROM matches WHERE id = ?").get(match.id) as MatchRow;
   res.json(toMatch(updated));
 });

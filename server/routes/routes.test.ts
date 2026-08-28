@@ -397,6 +397,145 @@ describe("índice único de rondas", () => {
   });
 });
 
+describe("orden de mesas por Elo", () => {
+  it("pone la pareja de mayor Elo en la mesa 1 entre parejas empatadas en puntaje", async () => {
+    // Regresión: reportado en un torneo real. 8 jugadores, ratings muy separados; tras
+    // la ronda 1 el grupo de 1 punto queda con dos parejas de Elo muy distinto (2000/900
+    // vs 1000/1900 por las sorpresas de abajo). La mesa 1 de la ronda 2 debe quedar con
+    // la pareja de mayor Elo (la del 2000), no con la que la consulta a la base devolviera
+    // primero.
+    const agent = await organizer();
+    const t = await agent
+      .post("/api/tournaments")
+      .send({ name: "Orden de mesas", date: "2026-08-27", numRounds: 2 });
+    const tournamentId = t.body.id as string;
+
+    const ratings: Record<string, number> = {
+      A: 2000, B: 1900, C: 1800, D: 1700, E: 1200, F: 1100, G: 1000, H: 900,
+    };
+    const ids: Record<string, string> = {};
+    for (const [lastName, rating] of Object.entries(ratings)) {
+      const p = await agent.post(`/api/tournaments/${tournamentId}/players`).send({ lastName, rating });
+      ids[lastName] = p.body.id;
+    }
+
+    const r1 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    expect(r1.status).toBe(201);
+    // Fold seeding: mesa1 A-E, mesa2 F-B, mesa3 C-G, mesa4 H-D (ver generateInitialPairings).
+    const byPlayers = (white: string, black: string) =>
+      r1.body.matches.find((m: { whiteId: string; blackId: string }) => m.whiteId === white && m.blackId === black);
+
+    // Ganan A (favorito), B (favorito, es negras acá), G (sorpresa) y H (sorpresa).
+    await agent.post(`/api/matches/${byPlayers(ids.A, ids.E).id}/result`).send({ result: "white" });
+    await agent.post(`/api/matches/${byPlayers(ids.F, ids.B).id}/result`).send({ result: "black" });
+    await agent.post(`/api/matches/${byPlayers(ids.C, ids.G).id}/result`).send({ result: "black" });
+    await agent.post(`/api/matches/${byPlayers(ids.H, ids.D).id}/result`).send({ result: "white" });
+    await agent.post(`/api/rounds/${r1.body.id}/complete`);
+
+    const r2 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    expect(r2.status).toBe(201);
+    // El grupo de 1 punto es {A2000, B1900, G1000, H900}: dos mesas posibles. La mesa 1
+    // debe incluir al Elo más alto (A, 2000).
+    const mesa1 = r2.body.matches[0];
+    expect([mesa1.whiteId, mesa1.blackId]).toContain(ids.A);
+  });
+});
+
+describe("bye manual", () => {
+  it("saca al jugador elegido del emparejamiento de la ronda 1 y le da el bye", async () => {
+    const agent = await organizer();
+    const t = await agent
+      .post("/api/tournaments")
+      .send({ name: "Bye manual R1", date: "2026-08-27", numRounds: 2 });
+    const tournamentId = t.body.id as string;
+    const ids: string[] = [];
+    for (const lastName of ["A", "B", "C", "D"]) {
+      const p = await agent.post(`/api/tournaments/${tournamentId}/players`).send({ lastName });
+      ids.push(p.body.id);
+    }
+
+    const r1 = await agent
+      .post(`/api/tournaments/${tournamentId}/rounds/generate`)
+      .send({ byePlayerIds: [ids[1]] });
+    expect(r1.status).toBe(201);
+
+    // B pidió el bye a propósito. Quedan A, C, D (impar): uno de ellos recibe el bye
+    // automático y los otros dos forman una mesa. Total: 2 byes, 1 mesa.
+    const byes = r1.body.matches.filter((m: { blackId: string | null }) => m.blackId === null);
+    const boards = r1.body.matches.filter((m: { blackId: string | null }) => m.blackId !== null);
+    expect(byes).toHaveLength(2);
+    expect(boards).toHaveLength(1);
+    expect(byes.map((m: { whiteId: string }) => m.whiteId)).toContain(ids[1]);
+  });
+
+  it("también funciona en rondas posteriores y rechaza un id que no es del torneo", async () => {
+    const agent = await organizer();
+    const t = await agent
+      .post("/api/tournaments")
+      .send({ name: "Bye manual R2", date: "2026-08-27", numRounds: 2 });
+    const tournamentId = t.body.id as string;
+    for (const lastName of ["Alfa", "Beta"]) {
+      await agent.post(`/api/tournaments/${tournamentId}/players`).send({ lastName });
+    }
+    const jugadores = await request(app).get(`/api/tournaments/${tournamentId}/players`);
+    const [p1, p2] = jugadores.body as Array<{ id: string }>;
+
+    const invalido = await agent
+      .post(`/api/tournaments/${tournamentId}/rounds/generate`)
+      .send({ byePlayerIds: ["no-existe"] });
+    expect(invalido.status).toBe(400);
+
+    const r1 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    await agent.post(`/api/matches/${r1.body.matches[0].id}/result`).send({ result: "white" });
+    await agent.post(`/api/rounds/${r1.body.id}/complete`);
+
+    // Con solo 2 jugadores activos, sacar a uno del emparejamiento deja al otro solo:
+    // también recibe bye (automático), así que la ronda queda con 2 byes y 0 mesas.
+    const r2 = await agent
+      .post(`/api/tournaments/${tournamentId}/rounds/generate`)
+      .send({ byePlayerIds: [p1.id] });
+    expect(r2.status).toBe(201);
+    expect(r2.body.matches).toHaveLength(2);
+    expect(r2.body.matches.every((m: { blackId: string | null }) => m.blackId === null)).toBe(true);
+    const byeWhoIds = r2.body.matches.map((m: { whiteId: string }) => m.whiteId);
+    expect(byeWhoIds).toContain(p1.id);
+    expect(byeWhoIds).toContain(p2.id);
+  });
+});
+
+describe("forfeit / W.O.", () => {
+  it("da el punto completo al presente y lo marca como forfeit", async () => {
+    const agent = await organizer();
+    const tournamentId = await seedTournament(agent, "Forfeit");
+    const round = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    const matchId = round.body.matches[0].id as string;
+
+    const res = await agent
+      .post(`/api/matches/${matchId}/result`)
+      .send({ result: "white", forfeit: true });
+    expect(res.status).toBe(200);
+    expect(res.body.result).toBe("white");
+    expect(res.body.forfeit).toBe(true);
+
+    // El puntaje cuenta igual que una victoria jugada.
+    await agent.post(`/api/rounds/${round.body.id}/complete`);
+    const standings = await request(app).get(`/api/tournaments/${tournamentId}/standings`);
+    expect(standings.body[0].score).toBe(1);
+  });
+
+  it("no deja marcar tablas como forfeit", async () => {
+    const agent = await organizer();
+    const tournamentId = await seedTournament(agent, "Forfeit tablas");
+    const round = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    const matchId = round.body.matches[0].id as string;
+
+    const res = await agent
+      .post(`/api/matches/${matchId}/result`)
+      .send({ result: "draw", forfeit: true });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("headers de seguridad", () => {
   it("manda CSP y anti-clickjacking, y no expone X-Powered-By", async () => {
     const res = await request(app).get("/api/tournaments");

@@ -12,6 +12,7 @@ function player(
     colorBalance: 0,
     opponents: new Set(),
     hadBye: false,
+    rating: null,
     ...opts,
   };
 }
@@ -86,6 +87,25 @@ describe("generatePairings", () => {
     ];
     const { pairs } = generatePairings(players);
     expect(pairs).toEqual([{ white: "b", black: "a" }]);
+  });
+
+  it("dentro de un mismo grupo de puntaje, pone la pareja con mayor Elo en la mesa 1", () => {
+    // Regresión: reportado en un torneo real. El orden de mesas solo comparaba puntaje;
+    // sin desempate por rating, dos parejas empatadas en puntaje quedaban en el orden que
+    // trajera la consulta a la base (arbitrario), así que el jugador de mayor Elo podía
+    // terminar en la mesa 2 en vez de la 1.
+    const players = [
+      player("h900", 1, { rating: 900 }),
+      player("g1000", 1, { rating: 1000 }),
+      player("a2000", 1, { rating: 2000 }),
+      player("b1900", 1, { rating: 1900 }),
+    ];
+    const { pairs } = generatePairings(players);
+    expect(pairs).toHaveLength(2);
+    // Mesa 1: la pareja que incluye al Elo más alto (2000).
+    expect([pairs[0].white, pairs[0].black]).toContain("a2000");
+    // Mesa 2: la otra pareja.
+    expect([pairs[1].white, pairs[1].black]).toContain("h900");
   });
 });
 

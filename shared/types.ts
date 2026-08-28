@@ -42,6 +42,8 @@ export interface Match {
   whiteId: string;
   blackId: string | null;
   result: MatchResult;
+  /** true cuando el resultado se cargó por incomparecencia (W.O.), no por partida jugada. */
+  forfeit: boolean;
 }
 
 export interface StandingsRow {
