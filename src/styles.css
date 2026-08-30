@@ -155,6 +155,9 @@ button {
 }
 
 .app-header__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 1rem;
@@ -162,6 +165,10 @@ button {
   letter-spacing: 0.02em;
   text-decoration: none;
   color: var(--board-light);
+}
+
+.app-header__mark svg {
+  color: var(--signal);
 }
 
 .app-header__context {
