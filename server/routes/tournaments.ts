@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { nanoid } from "nanoid";
 import { db } from "../db";
-import { formatPlayerName, type Tournament } from "../../shared/types";
+import { formatPlayerName, type StandingsRow, type Tournament } from "../../shared/types";
 import { computeStandings, type MatchOutcome } from "../scoring/tiebreaks";
 import { requireAuth } from "../middleware/auth";
 
@@ -16,6 +16,7 @@ interface TournamentRow {
   num_rounds: number;
   status: string;
   deleted_at: string | null;
+  championship_season: string | null;
 }
 
 function toTournament(row: TournamentRow): Tournament {
@@ -26,8 +27,11 @@ function toTournament(row: TournamentRow): Tournament {
     numRounds: row.num_rounds,
     status: row.status as Tournament["status"],
     deletedAt: row.deleted_at,
+    championshipSeason: row.championship_season,
   };
 }
+
+const SEASON_PATTERN = /^\d{4}$/;
 
 /**
  * Un torneo en la papelera se comporta como inexistente para todo el resto de la API:
@@ -56,7 +60,7 @@ router.get("/tournaments-papelera", requireAuth, (_req, res) => {
 });
 
 router.post("/tournaments", requireAuth, (req, res) => {
-  const { name, date, numRounds } = req.body ?? {};
+  const { name, date, numRounds, championshipSeason } = req.body ?? {};
   if (typeof name !== "string" || !name.trim()) {
     return res.status(400).json({ error: "el nombre es obligatorio" });
   }
@@ -69,10 +73,17 @@ router.post("/tournaments", requireAuth, (req, res) => {
   if (!Number.isInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) {
     return res.status(400).json({ error: `la cantidad de rondas debe ser un número entre 1 y ${MAX_ROUNDS}` });
   }
+  let season: string | null = null;
+  if (championshipSeason !== undefined && championshipSeason !== null && championshipSeason !== "") {
+    if (!SEASON_PATTERN.test(String(championshipSeason))) {
+      return res.status(400).json({ error: "la temporada debe ser un año de 4 dígitos, ej. 2026" });
+    }
+    season = String(championshipSeason);
+  }
   const id = nanoid();
   db.prepare(
-    "INSERT INTO tournaments (id, name, date, num_rounds, status) VALUES (?, ?, ?, ?, 'setup')",
-  ).run(id, name.trim(), date.trim(), rounds);
+    "INSERT INTO tournaments (id, name, date, num_rounds, status, championship_season) VALUES (?, ?, ?, ?, 'setup', ?)",
+  ).run(id, name.trim(), date.trim(), rounds, season);
   const row = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(id) as TournamentRow;
   res.status(201).json(toTournament(row));
 });
@@ -81,6 +92,31 @@ router.get("/tournaments/:id", (req, res) => {
   const row = findActiveTournament(req.params.id);
   if (!row) return res.status(404).json({ error: "no se encontró el torneo" });
   res.json(toTournament(row));
+});
+
+/**
+ * Único campo editable de un torneo por ahora: la temporada del campeonato anual.
+ * Es solo una etiqueta (no toca emparejamiento ni puntajes), así que se permite en
+ * cualquier estado del torneo, incluso ya completado.
+ */
+router.patch("/tournaments/:id", requireAuth, (req, res) => {
+  const row = findActiveTournament(req.params.id);
+  if (!row) return res.status(404).json({ error: "no se encontró el torneo" });
+
+  const { championshipSeason } = req.body ?? {};
+  if (championshipSeason === undefined) {
+    return res.status(400).json({ error: "falta el campo championshipSeason" });
+  }
+  if (championshipSeason !== null && !SEASON_PATTERN.test(String(championshipSeason))) {
+    return res.status(400).json({ error: "la temporada debe ser un año de 4 dígitos, ej. 2026" });
+  }
+
+  db.prepare("UPDATE tournaments SET championship_season = ? WHERE id = ?").run(
+    championshipSeason,
+    req.params.id,
+  );
+  const updated = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(req.params.id) as TournamentRow;
+  res.json(toTournament(updated));
 });
 
 /**
@@ -126,12 +162,12 @@ router.delete("/tournaments/:id/definitivo", requireAuth, (req, res) => {
   res.status(204).end();
 });
 
-router.get("/tournaments/:id/standings", (req, res) => {
-  const tournamentId = req.params.id;
-  if (!findActiveTournament(tournamentId)) {
-    return res.status(404).json({ error: "no se encontró el torneo" });
-  }
-
+/**
+ * Standings de un torneo a partir de sus rondas cerradas. Se exporta para que el
+ * campeonato anual (server/routes/championship.ts) sume el mismo puntaje que ve el
+ * organizador acá, en vez de recalcularlo con otra lógica.
+ */
+export function computeTournamentStandings(tournamentId: string): StandingsRow[] {
   const playerRows = db
     .prepare("SELECT id, last_name, first_name FROM players WHERE tournament_id = ?")
     .all(tournamentId) as Array<{ id: string; last_name: string; first_name: string }>;
@@ -172,7 +208,15 @@ router.get("/tournaments/:id/standings", (req, res) => {
     }
   }
 
-  res.json(computeStandings(players, history));
+  return computeStandings(players, history);
+}
+
+router.get("/tournaments/:id/standings", (req, res) => {
+  const tournamentId = req.params.id;
+  if (!findActiveTournament(tournamentId)) {
+    return res.status(404).json({ error: "no se encontró el torneo" });
+  }
+  res.json(computeTournamentStandings(tournamentId));
 });
 
 export default router;

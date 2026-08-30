@@ -5,6 +5,7 @@ import "./styles.css";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 import TournamentList from "./routes/TournamentList";
+import Championship from "./routes/Championship";
 import TournamentShell from "./routes/TournamentShell";
 import Players from "./routes/Players";
 import RoundPage from "./routes/Round";
@@ -18,6 +19,7 @@ createRoot(document.getElementById("root")!).render(
         <Routes>
           <Route element={<App />}>
             <Route index element={<TournamentList />} />
+            <Route path="campeonato" element={<Championship />} />
             <Route path="login" element={<Login />} />
             <Route path="t/:tournamentId" element={<TournamentShell />}>
               <Route index element={<Navigate to="players" replace />} />
