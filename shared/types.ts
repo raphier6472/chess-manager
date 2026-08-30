@@ -12,6 +12,8 @@ export interface Tournament {
   status: TournamentStatus;
   /** Fecha ISO en que se envió a la papelera; null si está activo. */
   deletedAt: string | null;
+  /** Año (ej. "2026") si el torneo suma para el campeonato de esa temporada; null si no. */
+  championshipSeason: string | null;
 }
 
 export interface Player {
@@ -21,6 +23,22 @@ export interface Player {
   firstName: string;
   rating: number | null;
   withdrawn: boolean;
+  /** Identidad compartida entre torneos, para sumar puntos de la misma persona. */
+  rosterPlayerId: string;
+}
+
+/** Persona del padrón, independiente de en qué torneos haya jugado. */
+export interface RosterPlayer {
+  id: string;
+  lastName: string;
+  firstName: string;
+}
+
+export interface ChampionshipStandingsRow {
+  rosterPlayerId: string;
+  name: string;
+  totalScore: number;
+  tournamentsPlayed: number;
 }
 
 /** Natural reading order ("Nombre Apellido") for display. Pairing and

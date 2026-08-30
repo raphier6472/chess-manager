@@ -28,6 +28,7 @@ interface PlayerRow {
   first_name: string;
   rating: number | null;
   withdrawn: number;
+  roster_player_id: string;
 }
 
 function toPlayer(row: PlayerRow): Player {
@@ -38,6 +39,7 @@ function toPlayer(row: PlayerRow): Player {
     firstName: row.first_name,
     rating: row.rating,
     withdrawn: row.withdrawn === 1,
+    rosterPlayerId: row.roster_player_id,
   };
 }
 
@@ -61,21 +63,50 @@ router.post("/tournaments/:tournamentId/players", requireAuth, (req, res) => {
     .get(req.params.tournamentId);
   if (!tournament) return res.status(404).json({ error: "no se encontró el torneo" });
 
-  const { lastName, firstName, rating } = req.body ?? {};
-  if (typeof lastName !== "string" || !lastName.trim()) {
-    return res.status(400).json({ error: "el apellido es obligatorio" });
-  }
-  const firstNameValue = typeof firstName === "string" ? firstName.trim() : "";
+  const { lastName, firstName, rating, rosterPlayerId } = req.body ?? {};
   const parsedRating = parseRating(rating);
   if ("error" in parsedRating) {
     return res.status(400).json({ error: parsedRating.error });
   }
   const ratingValue = parsedRating.value;
 
+  let lastNameValue: string;
+  let firstNameValue: string;
+  let rosterId: string;
+
+  if (typeof rosterPlayerId === "string" && rosterPlayerId) {
+    // Reusar una persona del padrón: el nombre viene de ahí, no del body, para que
+    // no queden dos grafías distintas del mismo jugador entre torneos.
+    const rosterRow = db
+      .prepare("SELECT * FROM roster_players WHERE id = ?")
+      .get(rosterPlayerId) as { id: string; last_name: string; first_name: string } | undefined;
+    if (!rosterRow) return res.status(404).json({ error: "no se encontró esa persona en el padrón" });
+    lastNameValue = rosterRow.last_name;
+    firstNameValue = rosterRow.first_name;
+    rosterId = rosterRow.id;
+  } else {
+    if (typeof lastName !== "string" || !lastName.trim()) {
+      return res.status(400).json({ error: "el apellido es obligatorio" });
+    }
+    lastNameValue = lastName.trim();
+    firstNameValue = typeof firstName === "string" ? firstName.trim() : "";
+    // Sin rosterPlayerId, es una persona nueva: se crea su fila en el padrón acá.
+    // Deliberadamente no se busca por nombre para reusar una existente (sería el
+    // mismo problema de fondo que el padrón vino a resolver: un tilde o un typo
+    // separaría a la misma persona en dos identidades igual). El buscador del
+    // padrón (GET /roster) es el camino para reusar una identidad a propósito.
+    rosterId = nanoid();
+    db.prepare("INSERT INTO roster_players (id, last_name, first_name) VALUES (?, ?, ?)").run(
+      rosterId,
+      lastNameValue,
+      firstNameValue,
+    );
+  }
+
   const id = nanoid();
   db.prepare(
-    "INSERT INTO players (id, tournament_id, last_name, first_name, rating, withdrawn) VALUES (?, ?, ?, ?, ?, 0)",
-  ).run(id, req.params.tournamentId, lastName.trim(), firstNameValue, ratingValue);
+    "INSERT INTO players (id, tournament_id, last_name, first_name, rating, withdrawn, roster_player_id) VALUES (?, ?, ?, ?, ?, 0, ?)",
+  ).run(id, req.params.tournamentId, lastNameValue, firstNameValue, ratingValue, rosterId);
   const row = db.prepare("SELECT * FROM players WHERE id = ?").get(id) as PlayerRow;
   res.status(201).json(toPlayer(row));
 });

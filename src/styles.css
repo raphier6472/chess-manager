@@ -700,6 +700,42 @@ table.data td input:focus {
   font-size: 0.85rem;
 }
 
+.roster-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+}
+
+.roster-suggestions li + li {
+  margin-top: 0.15rem;
+}
+
+.roster-suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.roster-suggestions button:hover {
+  background: var(--signal-soft);
+}
+
 .bye-picker {
   margin-bottom: 0.75rem;
 }

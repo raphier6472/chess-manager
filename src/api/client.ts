@@ -1,4 +1,12 @@
-import type { Match, Player, Round, StandingsRow, Tournament } from "../types";
+import type {
+  ChampionshipStandingsRow,
+  Match,
+  Player,
+  Round,
+  RosterPlayer,
+  StandingsRow,
+  Tournament,
+} from "../types";
 
 export interface RoundWithMatches extends Round {
   matches: Match[];
@@ -26,9 +34,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   listTournaments: () => request<Tournament[]>("/tournaments"),
-  createTournament: (input: { name: string; date: string; numRounds: number }) =>
+  createTournament: (input: { name: string; date: string; numRounds: number; championshipSeason?: string }) =>
     request<Tournament>("/tournaments", { method: "POST", body: JSON.stringify(input) }),
   getTournament: (id: string) => request<Tournament>(`/tournaments/${id}`),
+  updateTournament: (id: string, patch: { championshipSeason: string | null }) =>
+    request<Tournament>(`/tournaments/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteTournament: (id: string) => request<void>(`/tournaments/${id}`, { method: "DELETE" }),
   listPapelera: () => request<Tournament[]>("/tournaments-papelera"),
   restoreTournament: (id: string) =>
@@ -37,11 +47,17 @@ export const api = {
     request<void>(`/tournaments/${id}/definitivo`, { method: "DELETE" }),
 
   listPlayers: (tournamentId: string) => request<Player[]>(`/tournaments/${tournamentId}/players`),
-  addPlayer: (tournamentId: string, input: { lastName: string; firstName?: string; rating?: number | null }) =>
+  addPlayer: (
+    tournamentId: string,
+    input:
+      | { lastName: string; firstName?: string; rating?: number | null }
+      | { rosterPlayerId: string; rating?: number | null },
+  ) =>
     request<Player>(`/tournaments/${tournamentId}/players`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  searchRoster: (q: string) => request<RosterPlayer[]>(`/roster?q=${encodeURIComponent(q)}`),
   updatePlayer: (
     id: string,
     patch: Partial<{ lastName: string; firstName: string; rating: number | null; withdrawn: boolean }>,
@@ -64,6 +80,10 @@ export const api = {
   reopenRound: (roundId: string) => request<Round>(`/rounds/${roundId}/reopen`, { method: "POST" }),
 
   getStandings: (tournamentId: string) => request<StandingsRow[]>(`/tournaments/${tournamentId}/standings`),
+
+  listChampionshipSeasons: () => request<string[]>("/campeonato/temporadas"),
+  getChampionshipStandings: (season: string) =>
+    request<ChampionshipStandingsRow[]>(`/campeonato?season=${encodeURIComponent(season)}`),
 
   login: (password: string) =>
     request<{ authenticated: boolean }>("/auth/login", { method: "POST", body: JSON.stringify({ password }) }),

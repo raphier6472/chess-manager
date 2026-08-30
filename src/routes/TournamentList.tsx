@@ -17,6 +17,8 @@ export default function TournamentList() {
   const [showForm, setShowForm] = useState(false);
   const [papelera, setPapelera] = useState<Tournament[]>([]);
   const [showPapelera, setShowPapelera] = useState(false);
+  const [editingSeasonId, setEditingSeasonId] = useState<string | null>(null);
+  const [editingSeasonValue, setEditingSeasonValue] = useState("");
 
   const load = () => {
     api
@@ -47,6 +49,23 @@ export default function TournamentList() {
     setError(null);
     try {
       await api.deleteTournamentForever(t.id);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const startEditSeason = (t: Tournament) => {
+    setError(null);
+    setEditingSeasonId(t.id);
+    setEditingSeasonValue(t.championshipSeason ?? "");
+  };
+
+  const saveSeason = async (t: Tournament) => {
+    setError(null);
+    try {
+      await api.updateTournament(t.id, { championshipSeason: editingSeasonValue.trim() || null });
+      setEditingSeasonId(null);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -89,12 +108,45 @@ export default function TournamentList() {
                   <div className="tournament-row__name">{t.name}</div>
                   <div className="tournament-row__meta">
                     {t.date} · {t.numRounds} rondas
+                    {t.championshipSeason && ` · campeonato ${t.championshipSeason}`}
                   </div>
                 </div>
                 <span className={`badge ${t.status === "active" ? "badge--active" : t.status === "completed" ? "badge--completed" : ""}`}>
                   {STATUS_LABEL[t.status]}
                 </span>
               </Link>
+              {isOrganizer && (
+                <div className="form-row" style={{ padding: "0 0.9rem 0.75rem", gap: "0.4rem" }}>
+                  {editingSeasonId === t.id ? (
+                    <>
+                      <div className="field" style={{ width: "7rem" }}>
+                        <label htmlFor={`season-${t.id}`}>Temporada</label>
+                        <input
+                          id={`season-${t.id}`}
+                          placeholder="2026"
+                          value={editingSeasonValue}
+                          onChange={(e) => setEditingSeasonValue(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                      <button type="button" className="btn btn--felt btn--sm" onClick={() => saveSeason(t)}>
+                        Guardar
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => setEditingSeasonId(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEditSeason(t)}>
+                      {t.championshipSeason ? `Cambiar temporada (${t.championshipSeason})` : "Marcar para un campeonato"}
+                    </button>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -145,6 +197,7 @@ function NewTournamentForm({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [numRounds, setNumRounds] = useState(5);
+  const [championshipSeason, setChampionshipSeason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -153,7 +206,12 @@ function NewTournamentForm({ onCreated }: { onCreated: () => void }) {
     setError(null);
     setSaving(true);
     try {
-      await api.createTournament({ name: name.trim(), date, numRounds });
+      await api.createTournament({
+        name: name.trim(),
+        date,
+        numRounds,
+        championshipSeason: championshipSeason.trim() || undefined,
+      });
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -183,6 +241,15 @@ function NewTournamentForm({ onCreated }: { onCreated: () => void }) {
             value={numRounds}
             onChange={(e) => setNumRounds(Number(e.target.value))}
             required
+          />
+        </div>
+        <div className="field" style={{ width: "7rem" }}>
+          <label htmlFor="tseason">Campeonato (opcional)</label>
+          <input
+            id="tseason"
+            placeholder="2026"
+            value={championshipSeason}
+            onChange={(e) => setChampionshipSeason(e.target.value)}
           />
         </div>
         <button type="submit" className="btn btn--felt" disabled={saving}>

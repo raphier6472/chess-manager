@@ -11,6 +11,9 @@ export default function App() {
           Torneo
         </Link>
         <div className="app-header__actions">
+          <Link to="/campeonato" className="btn btn--ghost btn--sm">
+            Campeonato
+          </Link>
           <ThemeToggle />
           {isOrganizer ? (
             <button type="button" className="btn btn--ghost btn--sm" onClick={logout}>
