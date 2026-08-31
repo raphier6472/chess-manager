@@ -1,35 +1,36 @@
 import { Router } from "express";
 import { db } from "../db";
-import type { ChampionshipStandingsRow } from "../../shared/types";
+import type { ChampionshipStandingsRow, League } from "../../shared/types";
 import { computeTournamentStandings } from "./tournaments";
 
 const router = Router();
 
-/** Temporadas con al menos un torneo activo marcado, para el selector del frontend. */
-router.get("/campeonato/temporadas", (_req, res) => {
+/** Ligas con al menos un torneo activo marcado, para el selector del frontend. */
+router.get("/ligas", (_req, res) => {
   const rows = db
     .prepare(
-      `SELECT DISTINCT championship_season FROM tournaments
-       WHERE championship_season IS NOT NULL AND deleted_at IS NULL
-       ORDER BY championship_season DESC`,
+      `SELECT DISTINCT l.id, l.name FROM leagues l
+       JOIN tournaments t ON t.league_id = l.id
+       WHERE t.deleted_at IS NULL
+       ORDER BY l.name`,
     )
-    .all() as Array<{ championship_season: string }>;
-  res.json(rows.map((r) => r.championship_season));
+    .all() as League[];
+  res.json(rows);
 });
 
 /**
  * Suma directa del puntaje final que cada persona del padrón obtuvo en cada torneo
- * marcado con esta temporada (sin escala por posición, tal como se pidió). Reusa
+ * marcado con esta liga (sin escala por posición, tal como se pidió). Reusa
  * computeTournamentStandings para no recalcular el puntaje con otra lógica que la
  * que ya ve el organizador en cada torneo.
  */
 router.get("/campeonato", (req, res) => {
-  const season = typeof req.query.season === "string" ? req.query.season : "";
-  if (!season) return res.status(400).json({ error: "falta el parámetro season" });
+  const leagueId = typeof req.query.leagueId === "string" ? req.query.leagueId : "";
+  if (!leagueId) return res.status(400).json({ error: "falta el parámetro leagueId" });
 
   const tournaments = db
-    .prepare("SELECT id FROM tournaments WHERE championship_season = ? AND deleted_at IS NULL")
-    .all(season) as Array<{ id: string }>;
+    .prepare("SELECT id FROM tournaments WHERE league_id = ? AND deleted_at IS NULL")
+    .all(leagueId) as Array<{ id: string }>;
 
   const totals = new Map<string, { name: string; totalScore: number; tournamentsPlayed: number }>();
 

@@ -1,30 +1,32 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { ChampionshipStandingsRow } from "../types";
+import type { ChampionshipStandingsRow, League } from "../types";
 
 export default function Championship() {
-  const [seasons, setSeasons] = useState<string[] | null>(null);
-  const [season, setSeason] = useState<string | null>(null);
+  const [leagues, setLeagues] = useState<League[] | null>(null);
+  const [leagueId, setLeagueId] = useState<string | null>(null);
   const [rows, setRows] = useState<ChampionshipStandingsRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
-      .listChampionshipSeasons()
+      .listLeagues()
       .then((list) => {
-        setSeasons(list);
-        setSeason((current) => current ?? list[0] ?? null);
+        setLeagues(list);
+        setLeagueId((current) => current ?? list[0]?.id ?? null);
       })
       .catch((e) => setError(e.message));
   }, []);
 
   useEffect(() => {
-    if (!season) return;
+    if (!leagueId) return;
     api
-      .getChampionshipStandings(season)
+      .getChampionshipStandings(leagueId)
       .then(setRows)
       .catch((e) => setError(e.message));
-  }, [season]);
+  }, [leagueId]);
+
+  const selectedLeague = leagues?.find((l) => l.id === leagueId) ?? null;
 
   return (
     <div className="stack">
@@ -33,13 +35,13 @@ export default function Championship() {
           <p className="eyebrow">Suma de puntos entre torneos</p>
           <h1>Campeonato</h1>
         </div>
-        {seasons && seasons.length > 0 && (
-          <div className="field" style={{ width: "8rem" }}>
-            <label htmlFor="season-select">Temporada</label>
-            <select id="season-select" value={season ?? ""} onChange={(e) => setSeason(e.target.value)}>
-              {seasons.map((s) => (
-                <option key={s} value={s}>
-                  {s}
+        {leagues && leagues.length > 0 && (
+          <div className="field" style={{ width: "12rem" }}>
+            <label htmlFor="league-select">Liga</label>
+            <select id="league-select" value={leagueId ?? ""} onChange={(e) => setLeagueId(e.target.value)}>
+              {leagues.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
                 </option>
               ))}
             </select>
@@ -49,18 +51,20 @@ export default function Championship() {
 
       {error && <p className="form-error">{error}</p>}
 
-      {seasons !== null && seasons.length === 0 && (
+      {leagues !== null && leagues.length === 0 && (
         <p className="empty-state">
-          Todavía no hay ningún torneo marcado para un campeonato. Marcá la temporada de un torneo
-          desde la lista de torneos.
+          Todavía no hay ningún torneo marcado para una liga. Marcá la liga de un torneo desde la
+          lista de torneos.
         </p>
       )}
 
-      {season && rows !== null && rows.length === 0 && (
-        <p className="empty-state">Ningún torneo de la temporada {season} tiene resultados todavía.</p>
+      {leagueId && rows !== null && rows.length === 0 && (
+        <p className="empty-state">
+          Ningún torneo de la liga {selectedLeague?.name ?? ""} tiene resultados todavía.
+        </p>
       )}
 
-      {season && rows !== null && rows.length > 0 && (
+      {leagueId && rows !== null && rows.length > 0 && (
         <div className="table-scroll">
           <table className="data">
             <thead>
