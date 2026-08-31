@@ -8,6 +8,8 @@ export default function Players() {
   const { isOrganizer } = useAuth();
   const { tournamentId } = useParams<{ tournamentId: string }>();
   const [players, setPlayers] = useState<Player[] | null>(null);
+  const [leagueId, setLeagueId] = useState<string | null>(null);
+  const [rawLeagueParticipants, setRawLeagueParticipants] = useState<RosterPlayer[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lastName, setLastName] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -34,6 +36,23 @@ export default function Players() {
   };
 
   useEffect(load, [tournamentId]);
+
+  // Si el torneo pertenece a una liga, se preselecciona con quién ya jugó otro
+  // torneo de esa misma liga, para elegir de una lista en vez de tipear cada vez.
+  useEffect(() => {
+    if (!tournamentId) return;
+    api
+      .getTournament(tournamentId)
+      .then((t) => setLeagueId(t.leagueId))
+      .catch(() => setLeagueId(null));
+  }, [tournamentId]);
+
+  useEffect(() => {
+    if (!leagueId) return;
+    api.listLeagueParticipants(leagueId).then(setRawLeagueParticipants, () => setRawLeagueParticipants([]));
+  }, [leagueId]);
+
+  const leagueParticipants = leagueId ? rawLeagueParticipants : [];
 
   const showSuggestions = !selectedRosterId && lastName.trim().length >= 2;
 
@@ -129,6 +148,23 @@ export default function Players() {
 
   return (
     <div className="stack">
+      {isOrganizer && leagueParticipants.length > 0 && (
+        <div className="card" style={{ padding: "1.1rem" }}>
+          <p className="hint" style={{ marginBottom: "0.5rem" }}>
+            Participantes de esta liga:
+          </p>
+          <ul className="roster-suggestions roster-suggestions--static">
+            {leagueParticipants.map((m) => (
+              <li key={m.id}>
+                <button type="button" onClick={() => pickRosterMatch(m)}>
+                  {formatPlayerName(m)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {isOrganizer && (
         <form className="card" style={{ padding: "1.1rem" }} onSubmit={addPlayer}>
           <div className="form-row">

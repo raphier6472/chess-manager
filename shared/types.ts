@@ -12,8 +12,10 @@ export interface Tournament {
   status: TournamentStatus;
   /** Fecha ISO en que se envió a la papelera; null si está activo. */
   deletedAt: string | null;
-  /** Año (ej. "2026") si el torneo suma para el campeonato de esa temporada; null si no. */
-  championshipSeason: string | null;
+  /** Liga a la que suma este torneo (campeonato anual), null si no suma a ninguna. */
+  leagueId: string | null;
+  /** Nombre de la liga, para mostrar sin pedir la lista de ligas aparte. */
+  leagueName: string | null;
 }
 
 export interface Player {
@@ -32,6 +34,12 @@ export interface RosterPlayer {
   id: string;
   lastName: string;
   firstName: string;
+}
+
+/** Agrupa varios torneos bajo un nombre propio para sumar puntaje (campeonato anual). */
+export interface League {
+  id: string;
+  name: string;
 }
 
 export interface ChampionshipStandingsRow {

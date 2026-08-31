@@ -599,13 +599,19 @@ describe("campeonato anual", () => {
   /** Torneo de 1 ronda con 2 jugadores donde uno gana, para controlar el puntaje final. */
   async function tournamentWithWinner(
     agent: ReturnType<typeof request.agent>,
-    opts: { name: string; season?: string; winner: { rosterPlayerId?: string; lastName?: string }; result: "win" | "draw" | "loss" },
+    opts: {
+      name: string;
+      leagueName?: string;
+      leagueId?: string;
+      winner: { rosterPlayerId?: string; lastName?: string };
+      result: "win" | "draw" | "loss";
+    },
   ) {
     const t = await agent.post("/api/tournaments").send({
       name: opts.name,
       date: "2026-01-01",
       numRounds: 1,
-      championshipSeason: opts.season,
+      ...(opts.leagueId ? { leagueId: opts.leagueId } : opts.leagueName ? { leagueName: opts.leagueName } : {}),
     });
     expect(t.status).toBe(201);
     const tournamentId = t.body.id as string;
@@ -631,90 +637,153 @@ describe("campeonato anual", () => {
     await agent.post(`/api/matches/${match.id}/result`).send({ result });
     await agent.post(`/api/rounds/${round.body.id}/complete`);
 
-    return { tournamentId, rosterPlayerId: winner.body.rosterPlayerId as string };
+    return {
+      tournamentId,
+      leagueId: t.body.leagueId as string | null,
+      rosterPlayerId: winner.body.rosterPlayerId as string,
+    };
   }
 
-  it("suma el puntaje final de la misma persona solo entre los torneos de esa temporada", async () => {
+  it("suma el puntaje final de la misma persona solo entre los torneos de esa liga", async () => {
     const agent = await organizer();
 
     const a = await tournamentWithWinner(agent, {
       name: "Circuito enero",
-      season: "2026",
+      leagueName: "Liga Zephyr 2026",
       winner: { lastName: "Campeón" },
       result: "win",
     });
+    // Reusa la liga por id (no por nombre repetido): así se prueba el mismo camino
+    // que usa el buscador "elegir o crear" del frontend.
     const b = await tournamentWithWinner(agent, {
       name: "Circuito marzo",
-      season: "2026",
+      leagueId: a.leagueId!,
       winner: { rosterPlayerId: a.rosterPlayerId },
       result: "draw",
     });
-    // Mismo jugador, pero en otra temporada: no debe sumar a 2026.
-    await tournamentWithWinner(agent, {
-      name: "Circuito 2027",
-      season: "2027",
+    // Mismo jugador, pero en otra liga: no debe sumar a la primera.
+    const otra = await tournamentWithWinner(agent, {
+      name: "Circuito paralelo",
+      leagueName: "Otra liga",
       winner: { rosterPlayerId: a.rosterPlayerId },
       result: "win",
     });
-    // Torneo sin temporada marcada: tampoco debe sumar a ningún campeonato.
+    // Torneo sin liga marcada: tampoco debe sumar a ningún campeonato.
     await tournamentWithWinner(agent, {
       name: "Amistoso suelto",
       winner: { rosterPlayerId: a.rosterPlayerId },
       result: "win",
     });
 
-    const temporadas = await request(app).get("/api/campeonato/temporadas");
-    expect(temporadas.status).toBe(200);
-    expect(temporadas.body).toEqual(expect.arrayContaining(["2026", "2027"]));
+    const ligas = await request(app).get("/api/ligas");
+    expect(ligas.status).toBe(200);
+    expect(ligas.body.map((l: { name: string }) => l.name)).toEqual(
+      expect.arrayContaining(["Liga Zephyr 2026", "Otra liga"]),
+    );
 
-    const res2026 = await request(app).get("/api/campeonato?season=2026");
-    expect(res2026.status).toBe(200);
-    const row = res2026.body.find((r: { rosterPlayerId: string }) => r.rosterPlayerId === a.rosterPlayerId);
+    const resA = await request(app).get(`/api/campeonato?leagueId=${a.leagueId}`);
+    expect(resA.status).toBe(200);
+    const row = resA.body.find((r: { rosterPlayerId: string }) => r.rosterPlayerId === a.rosterPlayerId);
     expect(row.totalScore).toBe(1.5);
     expect(row.tournamentsPlayed).toBe(2);
 
-    const res2027 = await request(app).get("/api/campeonato?season=2027");
-    const row2027 = res2027.body.find((r: { rosterPlayerId: string }) => r.rosterPlayerId === a.rosterPlayerId);
-    expect(row2027.totalScore).toBe(1);
-    expect(row2027.tournamentsPlayed).toBe(1);
+    const resOtra = await request(app).get(`/api/campeonato?leagueId=${otra.leagueId}`);
+    const rowOtra = resOtra.body.find((r: { rosterPlayerId: string }) => r.rosterPlayerId === a.rosterPlayerId);
+    expect(rowOtra.totalScore).toBe(1);
+    expect(rowOtra.tournamentsPlayed).toBe(1);
 
     expect(b.tournamentId).not.toBe(a.tournamentId);
+    expect(b.leagueId).toBe(a.leagueId);
   });
 
-  it("GET /campeonato sin season devuelve 400", async () => {
+  it("GET /campeonato sin leagueId devuelve 400", async () => {
     expect((await request(app).get("/api/campeonato")).status).toBe(400);
+  });
+
+  it("POST /tournaments rechaza un leagueId que no existe", async () => {
+    const agent = await organizer();
+    const res = await agent
+      .post("/api/tournaments")
+      .send({ name: "Liga inválida", date: "2026-01-01", numRounds: 1, leagueId: "no-existe" });
+    expect(res.status).toBe(404);
   });
 });
 
-describe("marcar temporada de un torneo", () => {
-  it("PATCH /tournaments/:id acepta y limpia la temporada", async () => {
+describe("marcar liga de un torneo", () => {
+  it("PATCH /tournaments/:id crea una liga por nombre, la reusa por id y la limpia", async () => {
     const agent = await organizer();
-    const t = await agent.post("/api/tournaments").send({ name: "Marcar temporada", date: "2026-01-01", numRounds: 1 });
+    const t = await agent.post("/api/tournaments").send({ name: "Marcar liga", date: "2026-01-01", numRounds: 1 });
 
-    const set = await agent.patch(`/api/tournaments/${t.body.id}`).send({ championshipSeason: "2026" });
+    const set = await agent.patch(`/api/tournaments/${t.body.id}`).send({ leagueName: "Liga Nueva" });
     expect(set.status).toBe(200);
-    expect(set.body.championshipSeason).toBe("2026");
+    expect(set.body.leagueName).toBe("Liga Nueva");
+    const leagueId = set.body.leagueId as string;
+    expect(leagueId).toBeTruthy();
 
-    const clear = await agent.patch(`/api/tournaments/${t.body.id}`).send({ championshipSeason: null });
+    const reuse = await agent.patch(`/api/tournaments/${t.body.id}`).send({ leagueId });
+    expect(reuse.status).toBe(200);
+    expect(reuse.body.leagueId).toBe(leagueId);
+    expect(reuse.body.leagueName).toBe("Liga Nueva");
+
+    const clear = await agent.patch(`/api/tournaments/${t.body.id}`).send({ leagueId: null });
     expect(clear.status).toBe(200);
-    expect(clear.body.championshipSeason).toBeNull();
+    expect(clear.body.leagueId).toBeNull();
+    expect(clear.body.leagueName).toBeNull();
   });
 
-  it("rechaza una temporada con formato inválido", async () => {
+  it("rechaza un leagueId que no existe", async () => {
     const agent = await organizer();
-    const t = await agent.post("/api/tournaments").send({ name: "Temporada inválida", date: "2026-01-01", numRounds: 1 });
+    const t = await agent.post("/api/tournaments").send({ name: "Liga inexistente", date: "2026-01-01", numRounds: 1 });
+    const res = await agent.patch(`/api/tournaments/${t.body.id}`).send({ leagueId: "no-existe" });
+    expect(res.status).toBe(404);
+  });
 
-    for (const bad of ["26", "veintiseis", "20266"]) {
-      const res = await agent.patch(`/api/tournaments/${t.body.id}`).send({ championshipSeason: bad });
-      expect(res.status).toBe(400);
-    }
+  it("400 si no manda leagueId ni leagueName", async () => {
+    const agent = await organizer();
+    const t = await agent.post("/api/tournaments").send({ name: "Liga sin campo", date: "2026-01-01", numRounds: 1 });
+    const res = await agent.patch(`/api/tournaments/${t.body.id}`).send({});
+    expect(res.status).toBe(400);
   });
 
   it("exige sesión de organizador", async () => {
     const agent = await organizer();
-    const t = await agent.post("/api/tournaments").send({ name: "Temporada sin sesión", date: "2026-01-01", numRounds: 1 });
-    const res = await request(app).patch(`/api/tournaments/${t.body.id}`).send({ championshipSeason: "2026" });
+    const t = await agent.post("/api/tournaments").send({ name: "Liga sin sesión", date: "2026-01-01", numRounds: 1 });
+    const res = await request(app).patch(`/api/tournaments/${t.body.id}`).send({ leagueName: "X" });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("participantes ya inscritos en una liga", () => {
+  it("GET /leagues/:id/participantes devuelve quienes ya jugaron otro torneo de la misma liga", async () => {
+    const agent = await organizer();
+    const t1 = await agent
+      .post("/api/tournaments")
+      .send({ name: "Liga P1", date: "2026-01-01", numRounds: 1, leagueName: "Liga Part" });
+    const leagueId = t1.body.leagueId as string;
+    await agent.post(`/api/tournaments/${t1.body.id}/players`).send({ lastName: "Uno" });
+
+    // Otro torneo, sin liga: no debe aparecer en la lista de la liga.
+    const tSuelto = await agent.post("/api/tournaments").send({ name: "Suelto", date: "2026-02-01", numRounds: 1 });
+    await agent.post(`/api/tournaments/${tSuelto.body.id}/players`).send({ lastName: "Afuera" });
+
+    const res = await agent.get(`/api/leagues/${leagueId}/participantes`);
+    expect(res.status).toBe(200);
+    expect(res.body.map((p: { lastName: string }) => p.lastName)).toEqual(["Uno"]);
+  });
+
+  it("vacío para una liga recién creada", async () => {
+    const agent = await organizer();
+    const t = await agent
+      .post("/api/tournaments")
+      .send({ name: "Liga vacía", date: "2026-01-01", numRounds: 1, leagueName: "Liga Vacía" });
+    const res = await agent.get(`/api/leagues/${t.body.leagueId}/participantes`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("exige sesión de organizador", async () => {
+    expect((await request(app).get("/api/leagues/x/participantes")).status).toBe(401);
+    expect((await request(app).get("/api/leagues?q=Liga")).status).toBe(401);
   });
 });
 

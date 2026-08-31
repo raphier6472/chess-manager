@@ -11,6 +11,7 @@ import playersRouter from "./routes/players";
 import roundsRouter from "./routes/rounds";
 import authRouter from "./routes/auth";
 import rosterRouter from "./routes/roster";
+import leaguesRouter from "./routes/leagues";
 import championshipRouter from "./routes/championship";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -85,6 +86,7 @@ export function createApp() {
   app.use("/api", playersRouter);
   app.use("/api", roundsRouter);
   app.use("/api", rosterRouter);
+  app.use("/api", leaguesRouter);
   app.use("/api", championshipRouter);
 
   // Sin esto, una ruta /api/* que ningún router reconoce cae en el catch-all de la SPA de

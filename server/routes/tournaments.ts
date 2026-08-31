@@ -16,7 +16,8 @@ interface TournamentRow {
   num_rounds: number;
   status: string;
   deleted_at: string | null;
-  championship_season: string | null;
+  league_id: string | null;
+  league_name: string | null;
 }
 
 function toTournament(row: TournamentRow): Tournament {
@@ -27,11 +28,39 @@ function toTournament(row: TournamentRow): Tournament {
     numRounds: row.num_rounds,
     status: row.status as Tournament["status"],
     deletedAt: row.deleted_at,
-    championshipSeason: row.championship_season,
+    leagueId: row.league_id,
+    leagueName: row.league_name,
   };
 }
 
-const SEASON_PATTERN = /^\d{4}$/;
+// Trae league_name junto con el torneo para no tener que pedir la lista de ligas
+// aparte solo para mostrar el nombre (ver TournamentList.tsx).
+const TOURNAMENT_SELECT =
+  "SELECT t.*, l.name AS league_name FROM tournaments t LEFT JOIN leagues l ON l.id = t.league_id";
+
+/**
+ * Resuelve a qué liga queda enganchado un torneo a partir del body de POST/PATCH
+ * /tournaments: leagueId reusa una liga existente (404 si no existe), leagueName
+ * crea una liga nueva con ese nombre. Deliberadamente no busca por nombre para
+ * reusar una liga existente sin que el organizador la elija a propósito -- mismo
+ * motivo que en server/routes/players.ts con el padrón de jugadores.
+ */
+function resolveLeagueId(
+  body: Record<string, unknown>,
+): { ok: true; leagueId: string | null } | { ok: false; error: string } {
+  const { leagueId, leagueName } = body;
+  if (typeof leagueId === "string" && leagueId) {
+    const row = db.prepare("SELECT id FROM leagues WHERE id = ?").get(leagueId);
+    if (!row) return { ok: false, error: "no se encontró esa liga" };
+    return { ok: true, leagueId };
+  }
+  if (typeof leagueName === "string" && leagueName.trim()) {
+    const id = nanoid();
+    db.prepare("INSERT INTO leagues (id, name) VALUES (?, ?)").run(id, leagueName.trim());
+    return { ok: true, leagueId: id };
+  }
+  return { ok: true, leagueId: null };
+}
 
 /**
  * Un torneo en la papelera se comporta como inexistente para todo el resto de la API:
@@ -40,13 +69,13 @@ const SEASON_PATTERN = /^\d{4}$/;
  */
 export function findActiveTournament(id: string | string[]): TournamentRow | undefined {
   return db
-    .prepare("SELECT * FROM tournaments WHERE id = ? AND deleted_at IS NULL")
+    .prepare(`${TOURNAMENT_SELECT} WHERE t.id = ? AND t.deleted_at IS NULL`)
     .get(id) as TournamentRow | undefined;
 }
 
 router.get("/tournaments", (_req, res) => {
   const rows = db
-    .prepare("SELECT * FROM tournaments WHERE deleted_at IS NULL ORDER BY date DESC, name")
+    .prepare(`${TOURNAMENT_SELECT} WHERE t.deleted_at IS NULL ORDER BY t.date DESC, t.name`)
     .all() as TournamentRow[];
   res.json(rows.map(toTournament));
 });
@@ -54,13 +83,13 @@ router.get("/tournaments", (_req, res) => {
 /** Papelera: solo el organizador puede ver lo que se borró. */
 router.get("/tournaments-papelera", requireAuth, (_req, res) => {
   const rows = db
-    .prepare("SELECT * FROM tournaments WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
+    .prepare(`${TOURNAMENT_SELECT} WHERE t.deleted_at IS NOT NULL ORDER BY t.deleted_at DESC`)
     .all() as TournamentRow[];
   res.json(rows.map(toTournament));
 });
 
 router.post("/tournaments", requireAuth, (req, res) => {
-  const { name, date, numRounds, championshipSeason } = req.body ?? {};
+  const { name, date, numRounds } = req.body ?? {};
   if (typeof name !== "string" || !name.trim()) {
     return res.status(400).json({ error: "el nombre es obligatorio" });
   }
@@ -73,18 +102,13 @@ router.post("/tournaments", requireAuth, (req, res) => {
   if (!Number.isInteger(rounds) || rounds < 1 || rounds > MAX_ROUNDS) {
     return res.status(400).json({ error: `la cantidad de rondas debe ser un número entre 1 y ${MAX_ROUNDS}` });
   }
-  let season: string | null = null;
-  if (championshipSeason !== undefined && championshipSeason !== null && championshipSeason !== "") {
-    if (!SEASON_PATTERN.test(String(championshipSeason))) {
-      return res.status(400).json({ error: "la temporada debe ser un año de 4 dígitos, ej. 2026" });
-    }
-    season = String(championshipSeason);
-  }
+  const league = resolveLeagueId(req.body ?? {});
+  if (!league.ok) return res.status(404).json({ error: league.error });
   const id = nanoid();
   db.prepare(
-    "INSERT INTO tournaments (id, name, date, num_rounds, status, championship_season) VALUES (?, ?, ?, ?, 'setup', ?)",
-  ).run(id, name.trim(), date.trim(), rounds, season);
-  const row = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(id) as TournamentRow;
+    "INSERT INTO tournaments (id, name, date, num_rounds, status, league_id) VALUES (?, ?, ?, ?, 'setup', ?)",
+  ).run(id, name.trim(), date.trim(), rounds, league.leagueId);
+  const row = db.prepare(`${TOURNAMENT_SELECT} WHERE t.id = ?`).get(id) as TournamentRow;
   res.status(201).json(toTournament(row));
 });
 
@@ -95,27 +119,23 @@ router.get("/tournaments/:id", (req, res) => {
 });
 
 /**
- * Único campo editable de un torneo por ahora: la temporada del campeonato anual.
- * Es solo una etiqueta (no toca emparejamiento ni puntajes), así que se permite en
+ * Único campo editable de un torneo por ahora: la liga del campeonato anual. Es
+ * solo una etiqueta (no toca emparejamiento ni puntajes), así que se permite en
  * cualquier estado del torneo, incluso ya completado.
  */
 router.patch("/tournaments/:id", requireAuth, (req, res) => {
   const row = findActiveTournament(req.params.id);
   if (!row) return res.status(404).json({ error: "no se encontró el torneo" });
 
-  const { championshipSeason } = req.body ?? {};
-  if (championshipSeason === undefined) {
-    return res.status(400).json({ error: "falta el campo championshipSeason" });
+  const { leagueId, leagueName } = req.body ?? {};
+  if (leagueId === undefined && leagueName === undefined) {
+    return res.status(400).json({ error: "falta el campo leagueId o leagueName" });
   }
-  if (championshipSeason !== null && !SEASON_PATTERN.test(String(championshipSeason))) {
-    return res.status(400).json({ error: "la temporada debe ser un año de 4 dígitos, ej. 2026" });
-  }
+  const league = resolveLeagueId(req.body ?? {});
+  if (!league.ok) return res.status(404).json({ error: league.error });
 
-  db.prepare("UPDATE tournaments SET championship_season = ? WHERE id = ?").run(
-    championshipSeason,
-    req.params.id,
-  );
-  const updated = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(req.params.id) as TournamentRow;
+  db.prepare("UPDATE tournaments SET league_id = ? WHERE id = ?").run(league.leagueId, req.params.id);
+  const updated = db.prepare(`${TOURNAMENT_SELECT} WHERE t.id = ?`).get(req.params.id) as TournamentRow;
   res.json(toTournament(updated));
 });
 
@@ -141,7 +161,9 @@ router.post("/tournaments/:id/restaurar", requireAuth, (req, res) => {
     .get(req.params.id) as TournamentRow | undefined;
   if (!row) return res.status(404).json({ error: "no se encontró el torneo en la papelera" });
   db.prepare("UPDATE tournaments SET deleted_at = NULL WHERE id = ?").run(req.params.id);
-  const restored = db.prepare("SELECT * FROM tournaments WHERE id = ?").get(req.params.id) as TournamentRow;
+  const restored = db
+    .prepare(`${TOURNAMENT_SELECT} WHERE t.id = ?`)
+    .get(req.params.id) as TournamentRow;
   res.json(toTournament(restored));
 });
 

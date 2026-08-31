@@ -743,6 +743,30 @@ table.data td input:focus {
   background: var(--signal-soft);
 }
 
+/* Lista fija de participantes de una liga (Players.tsx): igual estilo que las
+   sugerencias del buscador, pero en flujo normal en vez de dropdown absoluto. */
+.roster-suggestions--static {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.roster-suggestions--static li + li {
+  margin-top: 0;
+}
+
+.roster-suggestions--static button {
+  width: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill, 999px);
+  padding: 0.3rem 0.7rem;
+}
+
 .bye-picker {
   margin-bottom: 0.75rem;
 }

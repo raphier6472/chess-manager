@@ -1,5 +1,6 @@
 import type {
   ChampionshipStandingsRow,
+  League,
   Match,
   Player,
   Round,
@@ -32,12 +33,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Enganche a una liga: reusar una existente por id, o crear una nueva por nombre. */
+type LeagueSelection =
+  | { leagueId: string; leagueName?: undefined }
+  | { leagueName: string; leagueId?: undefined }
+  | { leagueId?: undefined; leagueName?: undefined };
+
 export const api = {
   listTournaments: () => request<Tournament[]>("/tournaments"),
-  createTournament: (input: { name: string; date: string; numRounds: number; championshipSeason?: string }) =>
+  createTournament: (input: { name: string; date: string; numRounds: number } & LeagueSelection) =>
     request<Tournament>("/tournaments", { method: "POST", body: JSON.stringify(input) }),
   getTournament: (id: string) => request<Tournament>(`/tournaments/${id}`),
-  updateTournament: (id: string, patch: { championshipSeason: string | null }) =>
+  updateTournament: (id: string, patch: { leagueId: string | null } | { leagueName: string }) =>
     request<Tournament>(`/tournaments/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteTournament: (id: string) => request<void>(`/tournaments/${id}`, { method: "DELETE" }),
   listPapelera: () => request<Tournament[]>("/tournaments-papelera"),
@@ -81,9 +88,12 @@ export const api = {
 
   getStandings: (tournamentId: string) => request<StandingsRow[]>(`/tournaments/${tournamentId}/standings`),
 
-  listChampionshipSeasons: () => request<string[]>("/campeonato/temporadas"),
-  getChampionshipStandings: (season: string) =>
-    request<ChampionshipStandingsRow[]>(`/campeonato?season=${encodeURIComponent(season)}`),
+  listLeagues: () => request<League[]>("/ligas"),
+  searchLeagues: (q: string) => request<League[]>(`/leagues?q=${encodeURIComponent(q)}`),
+  listLeagueParticipants: (leagueId: string) =>
+    request<RosterPlayer[]>(`/leagues/${leagueId}/participantes`),
+  getChampionshipStandings: (leagueId: string) =>
+    request<ChampionshipStandingsRow[]>(`/campeonato?leagueId=${encodeURIComponent(leagueId)}`),
 
   login: (password: string) =>
     request<{ authenticated: boolean }>("/auth/login", { method: "POST", body: JSON.stringify({ password }) }),
