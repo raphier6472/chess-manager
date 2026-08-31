@@ -11,6 +11,10 @@ export default function Login() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!password) {
+      setError("la contraseña es obligatoria");
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
@@ -32,7 +36,7 @@ export default function Login() {
         </div>
       </div>
 
-      <form className="card" style={{ padding: "1.1rem", maxWidth: "22rem" }} onSubmit={submit}>
+      <form className="card" style={{ padding: "1.1rem", maxWidth: "22rem" }} onSubmit={submit} noValidate>
         <div className="form-row">
           <div className="field" style={{ flex: "1 1 auto" }}>
             <label htmlFor="password">Password</label>
@@ -41,7 +45,6 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
               autoFocus
             />
           </div>

@@ -75,7 +75,11 @@ export default function Players() {
 
   const addPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tournamentId || !lastName.trim()) return;
+    if (!tournamentId) return;
+    if (!lastName.trim()) {
+      setError("el apellido es obligatorio");
+      return;
+    }
     setError(null);
     try {
       await api.addPlayer(
@@ -121,7 +125,10 @@ export default function Players() {
   const cancelEdit = () => setEditingId(null);
 
   const saveEdit = async (p: Player) => {
-    if (!editLastName.trim()) return;
+    if (!editLastName.trim()) {
+      setError("el apellido es obligatorio");
+      return;
+    }
     setError(null);
     try {
       await api.updatePlayer(p.id, {
@@ -166,7 +173,7 @@ export default function Players() {
       )}
 
       {isOrganizer && (
-        <form className="card" style={{ padding: "1.1rem" }} onSubmit={addPlayer}>
+        <form className="card" style={{ padding: "1.1rem" }} onSubmit={addPlayer} noValidate>
           <div className="form-row">
             <div className="field" style={{ flex: "1 1 180px", position: "relative" }}>
               <label htmlFor="plastname">Apellido</label>
@@ -179,7 +186,6 @@ export default function Players() {
                   setLastName(e.target.value);
                 }}
                 autoComplete="off"
-                required
               />
               {visibleRosterMatches.length > 0 && (
                 <ul className="roster-suggestions">

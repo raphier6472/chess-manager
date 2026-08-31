@@ -283,8 +283,23 @@ function NewTournamentForm({ onCreated }: { onCreated: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const MIN_ROUNDS = 1;
+  const MAX_ROUNDS = 30;
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim()) {
+      setError("el nombre es obligatorio");
+      return;
+    }
+    if (!date) {
+      setError("la fecha es obligatoria");
+      return;
+    }
+    if (!Number.isInteger(numRounds) || numRounds < MIN_ROUNDS || numRounds > MAX_ROUNDS) {
+      setError(`la cantidad de rondas debe ser un número entre ${MIN_ROUNDS} y ${MAX_ROUNDS}`);
+      return;
+    }
     setError(null);
     setSaving(true);
     try {
@@ -307,15 +322,15 @@ function NewTournamentForm({ onCreated }: { onCreated: () => void }) {
   };
 
   return (
-    <form className="card" style={{ padding: "1.1rem" }} onSubmit={submit}>
+    <form className="card" style={{ padding: "1.1rem" }} onSubmit={submit} noValidate>
       <div className="form-row">
         <div className="field" style={{ flex: "2 1 220px" }}>
           <label htmlFor="tname">Nombre</label>
-          <input id="tname" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+          <input id="tname" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </div>
         <div className="field">
           <label htmlFor="tdate">Fecha</label>
-          <input id="tdate" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+          <input id="tdate" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
         <div className="field" style={{ width: "6rem" }}>
           <label htmlFor="trounds">Rondas</label>
@@ -326,7 +341,6 @@ function NewTournamentForm({ onCreated }: { onCreated: () => void }) {
             max={30}
             value={numRounds}
             onChange={(e) => setNumRounds(Number(e.target.value))}
-            required
           />
         </div>
         <LeaguePicker
