@@ -57,7 +57,7 @@ router.post("/auth/logout", (req, res) => {
 router.get("/auth/me", (req, res) => {
   const token = req.signedCookies?.[SESSION_COOKIE_NAME];
   const authenticated = !!token && touchSession(token);
-  res.json({ authenticated });
+  res.json({ authenticated, organizerName: authenticated ? process.env.ORGANIZER_NAME || null : null });
 });
 
 export default router;
