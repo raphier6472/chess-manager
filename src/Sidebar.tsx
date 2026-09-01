@@ -19,7 +19,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
       <aside className={`sidebar ${open ? "sidebar--open" : ""}`}>
         <Link to="/" className="sidebar__mark">
           <QueenIcon />
-          Torneo
+          Enroque
         </Link>
 
         <nav className="sidebar__nav">

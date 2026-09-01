@@ -1,7 +1,11 @@
-# Chess Manager
+# Enroque
 
 Gestor de torneos de ajedrez por **sistema suizo**, pensado para que una sola persona
 pueda dirigir un torneo desde el celular mientras camina entre las mesas.
+
+> El producto se llama **Enroque**. El repositorio de GitHub, el dominio público y el
+> nombre del servicio systemd siguen usando `chess-manager` por razones históricas —
+> es un cambio de nombre de marca, no de infraestructura.
 
 Cubre el ciclo completo: inscribir jugadores, generar los emparejamientos de cada ronda,
 cargar resultados, y publicar la tabla de posiciones con desempates y el podio final.
