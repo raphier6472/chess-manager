@@ -18,6 +18,11 @@ data
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# Claude Code's local working directory (worktrees, settings) -- never repo content.
+# Left untracked, this shows up as a permanently "dirty" working tree, which is what
+# blocked deploy.sh's uncommitted-changes safety check for several deploy attempts.
+.claude/
 .DS_Store
 *.suo
 *.ntvs*
