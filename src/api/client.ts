@@ -98,5 +98,5 @@ export const api = {
   login: (password: string) =>
     request<{ authenticated: boolean }>("/auth/login", { method: "POST", body: JSON.stringify({ password }) }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
-  me: () => request<{ authenticated: boolean; organizerName: string | null }>("/auth/me"),
+  me: () => request<{ authenticated: boolean }>("/auth/me"),
 };

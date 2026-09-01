@@ -151,7 +151,6 @@ definen en la unidad de systemd, el gestor de procesos o el perfil del shell.
 | Variable | Obligatoria | Por defecto | Para qué sirve |
 |---|---|---|---|
 | `ORGANIZER_PASSWORD_HASH` | Sí, para poder editar | — | Hash scrypt de la contraseña del organizador. Se genera con `npm run hash-password`. Pégalo completo y en una sola línea: si el valor queda cortado, el servidor lo detecta al arrancar, avisa por consola y deja el acceso deshabilitado. |
-| `ORGANIZER_NAME` | No | — | Nombre que se muestra en la interfaz mientras hay sesión de organizador activa. Sin ella, se muestra solo "Organizador". |
 | `SESSION_COOKIE_SECRET` | Sí, en producción | secreto efímero | Firma la cookie de sesión. Si falta, se genera uno en memoria y las sesiones no sobreviven a un reinicio. |
 | `SESSION_TTL_HOURS` | No | `12` | Duración de la sesión, renovada mientras haya actividad. |
 | `PORT` | No | `3001` | Puerto del servidor. |

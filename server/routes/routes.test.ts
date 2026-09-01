@@ -301,26 +301,6 @@ describe("validación de entrada", () => {
   });
 });
 
-describe("GET /auth/me", () => {
-  it("incluye organizerName solo con sesión activa, y solo si ORGANIZER_NAME está seteada", async () => {
-    const anon = await request(app).get("/api/auth/me");
-    expect(anon.body).toEqual({ authenticated: false, organizerName: null });
-
-    const agent = await organizer();
-
-    const withoutName = await agent.get("/api/auth/me");
-    expect(withoutName.body).toEqual({ authenticated: true, organizerName: null });
-
-    process.env.ORGANIZER_NAME = "Pablo";
-    try {
-      const withName = await agent.get("/api/auth/me");
-      expect(withName.body).toEqual({ authenticated: true, organizerName: "Pablo" });
-    } finally {
-      delete process.env.ORGANIZER_NAME;
-    }
-  });
-});
-
 describe("rate-limit del login", () => {
   it("no se evade rotando X-Forwarded-For", async () => {
     // Regresión: con `trust proxy: "loopback"` Express tomaba el IP del XFF que manda
