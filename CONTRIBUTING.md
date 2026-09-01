@@ -1,6 +1,6 @@
 # Cómo contribuir
 
-Gracias por el interés en mejorar Chess Manager. Este documento explica cómo trabajar en el
+Gracias por el interés en mejorar Enroque. Este documento explica cómo trabajar en el
 proyecto y qué se espera de una contribución.
 
 ## Antes de escribir código

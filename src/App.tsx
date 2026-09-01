@@ -34,7 +34,7 @@ export default function App() {
           </button>
           <Link to="/" className="mobile-topbar__mark">
             <QueenIcon />
-            Torneo
+            Enroque
           </Link>
         </header>
         <main className="app-main">

@@ -57,7 +57,7 @@ export function createApp() {
   const cookieSecret = process.env.SESSION_COOKIE_SECRET;
   if (!cookieSecret) {
     console.warn(
-      "[chess-manager] SESSION_COOKIE_SECRET no está seteada: se usa un secret efímero " +
+      "[enroque] SESSION_COOKIE_SECRET no está seteada: se usa un secret efímero " +
         "generado en memoria. Las sesiones no sobrevivirán un reinicio del server. " +
         "Seteala en producción (ver .env.example).",
     );
@@ -67,7 +67,7 @@ export function createApp() {
   const storedHash = process.env.ORGANIZER_PASSWORD_HASH;
   if (!storedHash) {
     console.warn(
-      "[chess-manager] ORGANIZER_PASSWORD_HASH no está seteada: el login del organizador " +
+      "[enroque] ORGANIZER_PASSWORD_HASH no está seteada: el login del organizador " +
         "estará deshabilitado (la app sigue funcionando en modo solo lectura). " +
         "Génerala con: npm run hash-password",
     );
@@ -75,7 +75,7 @@ export function createApp() {
     // Antes solo se comprobaba que la variable existiera. Un hash cortado al pegarlo en el
     // unit de systemd pasaba desapercibido, y el login quedaba roto sin que nadie lo notara.
     console.error(
-      "[chess-manager] ORGANIZER_PASSWORD_HASH tiene un formato inválido: el login del " +
+      "[enroque] ORGANIZER_PASSWORD_HASH tiene un formato inválido: el login del " +
         "organizador queda DESHABILITADO. Suele pasar por un pegado cortado o partido en " +
         "varias líneas. Regénerala con: npm run hash-password",
     );
