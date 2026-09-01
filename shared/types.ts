@@ -42,11 +42,36 @@ export interface League {
   name: string;
 }
 
-export interface ChampionshipStandingsRow {
+/** Liga para la lista de archivo (/campeonato), con cuántos torneos tiene. */
+export interface LeagueSummary extends League {
+  tournamentCount: number;
+}
+
+/** Un torneo de la liga, tal como aparece en el dashboard del campeonato. */
+export interface ChampionshipTournamentSummary {
+  id: string;
+  name: string;
+  date: string;
+  numRounds: number;
+  status: TournamentStatus;
+}
+
+export interface ChampionshipRow {
   rosterPlayerId: string;
   name: string;
+  /** tournamentId -> puntaje en ese torneo; sin esa clave = no jugó ese torneo. */
+  scores: Record<string, number>;
   totalScore: number;
   tournamentsPlayed: number;
+  firstPlaceFinishes: number;
+}
+
+/** Todo lo que necesita el dashboard de una liga: sus torneos (columnas) y la tabla. */
+export interface ChampionshipBoard {
+  leagueId: string;
+  leagueName: string;
+  tournaments: ChampionshipTournamentSummary[];
+  rows: ChampionshipRow[];
 }
 
 /** Natural reading order ("Nombre Apellido") for display. Pairing and

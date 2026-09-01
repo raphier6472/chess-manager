@@ -707,15 +707,24 @@ describe("campeonato anual", () => {
     expect(ligas.body.map((l: { name: string }) => l.name)).toEqual(
       expect.arrayContaining(["Liga Zephyr 2026", "Otra liga"]),
     );
+    const zephyrSummary = ligas.body.find((l: { id: string }) => l.id === zephyrId);
+    expect(zephyrSummary.tournamentCount).toBe(2);
 
     const resA = await request(app).get(`/api/campeonato?leagueId=${a.leagueId}`);
     expect(resA.status).toBe(200);
-    const row = resA.body.find((r: { rosterPlayerId: string }) => r.rosterPlayerId === a.rosterPlayerId);
+    expect(resA.body.leagueId).toBe(zephyrId);
+    expect(resA.body.leagueName).toBe("Liga Zephyr 2026");
+    expect(resA.body.tournaments.map((t: { name: string }) => t.name)).toEqual(["Circuito enero", "Circuito marzo"]);
+    const row = resA.body.rows.find((r: { rosterPlayerId: string }) => r.rosterPlayerId === a.rosterPlayerId);
     expect(row.totalScore).toBe(1.5);
     expect(row.tournamentsPlayed).toBe(2);
+    // Por torneo: ganó el primero (1 punto) y empató el segundo (0.5); el rival
+    // que faltó a un torneo no debería tener esa clave en su columna.
+    expect(row.scores[a.tournamentId]).toBe(1);
+    expect(row.scores[b.tournamentId]).toBe(0.5);
 
     const resOtra = await request(app).get(`/api/campeonato?leagueId=${otra.leagueId}`);
-    const rowOtra = resOtra.body.find((r: { rosterPlayerId: string }) => r.rosterPlayerId === a.rosterPlayerId);
+    const rowOtra = resOtra.body.rows.find((r: { rosterPlayerId: string }) => r.rosterPlayerId === a.rosterPlayerId);
     expect(rowOtra.totalScore).toBe(1);
     expect(rowOtra.tournamentsPlayed).toBe(1);
 
@@ -723,8 +732,40 @@ describe("campeonato anual", () => {
     expect(b.leagueId).toBe(a.leagueId);
   });
 
-  it("GET /campeonato sin leagueId devuelve 400", async () => {
+  it("desempate: a igual puntaje total, gana quien jugó más torneos; a igual ambos, gana quien tiene más primeros puestos", async () => {
+    const agent = await organizer();
+    const ligaId = await createLeague(agent, "Liga Desempate");
+
+    // A gana un torneo (1 punto en 1 torneo jugado).
+    const a = await tournamentWithWinner(agent, {
+      name: "Torneo 1",
+      leagueId: ligaId,
+      winner: { lastName: "Constante" },
+      result: "win",
+    });
+    // B empata dos torneos (0.5 + 0.5 = 1 punto en 2 torneos jugados) -- mismo total que A,
+    // pero jugó más torneos, así que debería quedar arriba.
+    const b1 = await tournamentWithWinner(agent, {
+      name: "Torneo 2",
+      leagueId: ligaId,
+      winner: { lastName: "Regular" },
+      result: "draw",
+    });
+    await tournamentWithWinner(agent, {
+      name: "Torneo 3",
+      leagueId: ligaId,
+      winner: { rosterPlayerId: b1.rosterPlayerId },
+      result: "draw",
+    });
+
+    const res = await request(app).get(`/api/campeonato?leagueId=${ligaId}`);
+    const names = res.body.rows.map((r: { name: string }) => r.name);
+    expect(names.indexOf("Regular")).toBeLessThan(names.indexOf("Constante"));
+  });
+
+  it("GET /campeonato sin leagueId devuelve 400; con una liga que no existe devuelve 404", async () => {
     expect((await request(app).get("/api/campeonato")).status).toBe(400);
+    expect((await request(app).get("/api/campeonato?leagueId=no-existe")).status).toBe(404);
   });
 
   it("POST /tournaments rechaza un leagueId que no existe", async () => {
