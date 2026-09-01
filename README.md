@@ -168,6 +168,12 @@ definen en la unidad de systemd, el gestor de procesos o el perfil del shell.
 
 ## Despliegue en producción
 
+Estos comandos describen cómo arranca el proceso en el servidor. Para llevar un cambio nuevo
+hasta ahí (build + sincronizar + reiniciar + verificar), usar `./deploy.sh` desde el checkout
+principal, en `main` y sin cambios sin commitear — hace las cuatro cosas en un solo paso y
+compara el bundle que acaba de compilar contra el que producción efectivamente sirve, en vez de
+asumir que el deploy funcionó por un `curl` a `/api/*`.
+
 ```bash
 npm ci
 npm run build          # compila la interfaz en dist/
