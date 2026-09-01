@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { nanoid } from "nanoid";
 import { db } from "../db";
 import type { League, RosterPlayer } from "../../shared/types";
 import { requireAuth } from "../middleware/auth";
@@ -17,20 +18,36 @@ function toLeague(row: LeagueRow): League {
 }
 
 /**
- * Buscador para reutilizar o crear una liga al marcar un torneo (ver PATCH/POST
- * /tournaments en tournaments.ts). Mismo patrón que /roster: nombre libre, sin
- * auto-emparejar -- elegir una sugerencia es el único camino para reusar una liga
- * existente, tipear sin elegir crea una nueva.
+ * Sin `q`: todas las ligas (para el selector de "marcar liga" en TournamentList.tsx --
+ * son pocas, no hace falta tipear para verlas). Con `q`: filtra por nombre.
  */
 router.get("/leagues", requireAuth, (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  if (!q) return res.json([]);
-
-  const like = `%${q}%`;
-  const rows = db
-    .prepare(`SELECT * FROM leagues WHERE name LIKE ? ORDER BY name LIMIT ${MAX_RESULTS}`)
-    .all(like) as LeagueRow[];
+  const rows = q
+    ? (db
+        .prepare(`SELECT * FROM leagues WHERE name LIKE ? ORDER BY name LIMIT ${MAX_RESULTS}`)
+        .all(`%${q}%`) as LeagueRow[])
+    : (db.prepare("SELECT * FROM leagues ORDER BY name").all() as LeagueRow[]);
   res.json(rows.map(toLeague));
+});
+
+/**
+ * Único camino para crear una liga: una acción explícita y separada de marcar un
+ * torneo. Antes, marcar un torneo con un nombre que no coincidía con ninguna
+ * sugerencia creaba una liga nueva en silencio -- en el uso real esto produjo dos
+ * ligas "Khol 2026" distintas, partiendo el campeonato en dos sin que nadie lo
+ * pidiera. Ahora `POST /tournaments` y `PATCH /tournaments/:id` solo aceptan
+ * `leagueId` de una liga que ya existe (ver server/routes/tournaments.ts).
+ */
+router.post("/leagues", requireAuth, (req, res) => {
+  const { name } = req.body ?? {};
+  if (typeof name !== "string" || !name.trim()) {
+    return res.status(400).json({ error: "el nombre de la liga es obligatorio" });
+  }
+  const id = nanoid();
+  db.prepare("INSERT INTO leagues (id, name) VALUES (?, ?)").run(id, name.trim());
+  const row = db.prepare("SELECT * FROM leagues WHERE id = ?").get(id) as LeagueRow;
+  res.status(201).json(toLeague(row));
 });
 
 /**

@@ -11,74 +11,94 @@ const STATUS_LABEL: Record<Tournament["status"], string> = {
 };
 
 /**
- * Buscador "elegir o crear liga": tipear muestra ligas existentes que coincidan;
- * elegir una fija selectedId y reusa esa liga; seguir tipeando sin elegir deja el
- * nombre suelto para crear una liga nueva al guardar (mismo patrón que el buscador
- * del padrón de jugadores en Players.tsx, y por el mismo motivo: evitar que un
- * tilde o un espacio de más fragmente el campeonato en dos ligas).
+ * Elegir una liga es siempre por id (el <select> solo puede tener valores que ya
+ * existen) y crear una liga es una acción separada y explícita ("+ Nueva liga").
+ * Antes había un único campo de texto "elegir o crear" -- tipear un nombre sin
+ * elegir la sugerencia creaba una liga nueva en silencio, y en el uso real terminó
+ * creando dos ligas "Khol 2026" distintas que partieron el campeonato en dos.
  */
-function LeaguePicker({
+function LeagueSelect({
   idPrefix,
-  value,
-  onValueChange,
+  leagues,
   selectedId,
   onSelect,
+  onCreated,
 }: {
   idPrefix: string;
-  value: string;
-  onValueChange: (v: string) => void;
+  leagues: League[];
   selectedId: string | null;
-  onSelect: (league: League | null) => void;
+  onSelect: (id: string | null) => void;
+  onCreated: (league: League) => void;
 }) {
-  const [matches, setMatches] = useState<League[]>([]);
-  const showSuggestions = !selectedId && value.trim().length >= 2;
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!showSuggestions) return;
-    const timer = setTimeout(() => {
-      api.searchLeagues(value.trim()).then(setMatches, () => setMatches([]));
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [value, showSuggestions]);
+  const createLeague = async () => {
+    if (!newName.trim()) return;
+    setError(null);
+    setSaving(true);
+    try {
+      const league = await api.createLeague(newName.trim());
+      onCreated(league);
+      onSelect(league.id);
+      setCreating(false);
+      setNewName("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
 
-  const visibleMatches = showSuggestions ? matches : [];
+  if (creating) {
+    return (
+      <div className="field" style={{ width: "14rem" }}>
+        <label htmlFor={`${idPrefix}-league-new`}>Nombre de la nueva liga</label>
+        <div className="form-row" style={{ gap: "0.3rem" }}>
+          <input
+            id={`${idPrefix}-league-new`}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            autoFocus
+          />
+          <button type="button" className="btn btn--felt btn--sm" onClick={createLeague} disabled={saving}>
+            Crear
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => {
+              setCreating(false);
+              setNewName("");
+              setError(null);
+            }}
+          >
+            Cancelar
+          </button>
+        </div>
+        {error && <p className="form-error">{error}</p>}
+      </div>
+    );
+  }
 
   return (
-    <div className="field" style={{ width: "12rem", position: "relative" }}>
+    <div className="field" style={{ width: "14rem" }}>
       <label htmlFor={`${idPrefix}-league`}>Liga (opcional)</label>
-      <input
-        id={`${idPrefix}-league`}
-        placeholder="Nombre de la liga"
-        value={value}
-        onChange={(e) => {
-          onSelect(null);
-          onValueChange(e.target.value);
-        }}
-        autoComplete="off"
-      />
-      {visibleMatches.length > 0 && (
-        <ul className="roster-suggestions">
-          {visibleMatches.map((l) => (
-            <li key={l.id}>
-              <button
-                type="button"
-                onClick={() => {
-                  onSelect(l);
-                  onValueChange(l.name);
-                  setMatches([]);
-                }}
-              >
-                {l.name} <span className="hint">— liga existente</span>
-              </button>
-            </li>
+      <div className="form-row" style={{ gap: "0.3rem" }}>
+        <select id={`${idPrefix}-league`} value={selectedId ?? ""} onChange={(e) => onSelect(e.target.value || null)}>
+          <option value="">— sin liga —</option>
+          {leagues.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
           ))}
-        </ul>
-      )}
-      {selectedId && (
-        <p className="hint" style={{ marginTop: "0.2rem" }}>
-          Se va a sumar a la liga existente.
-        </p>
-      )}
+        </select>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setCreating(true)}>
+          + Nueva liga
+        </button>
+      </div>
     </div>
   );
 }
@@ -86,12 +106,12 @@ function LeaguePicker({
 export default function TournamentList() {
   const { isOrganizer } = useAuth();
   const [tournaments, setTournaments] = useState<Tournament[] | null>(null);
+  const [leagues, setLeagues] = useState<League[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [papelera, setPapelera] = useState<Tournament[]>([]);
   const [showPapelera, setShowPapelera] = useState(false);
   const [editingLeagueRowId, setEditingLeagueRowId] = useState<string | null>(null);
-  const [editingLeagueValue, setEditingLeagueValue] = useState("");
   const [editingSelectedLeagueId, setEditingSelectedLeagueId] = useState<string | null>(null);
 
   const load = () => {
@@ -99,14 +119,22 @@ export default function TournamentList() {
       .listTournaments()
       .then(setTournaments)
       .catch((e) => setError(e.message));
-    // La papelera solo la ve el organizador; el render ya está protegido por isOrganizer,
-    // así que no hace falta limpiarla al cerrar sesión.
+    // La papelera y el listado completo de ligas (para el selector) solo los ve el
+    // organizador; el render ya está protegido por isOrganizer, así que no hace
+    // falta limpiarlos al cerrar sesión.
     if (isOrganizer) {
       api.listPapelera().then(setPapelera).catch(() => setPapelera([]));
+      api.listAllLeagues().then(setLeagues).catch(() => setLeagues([]));
     }
   };
 
   useEffect(load, [isOrganizer]);
+
+  // Una liga creada desde cualquiera de los dos selectores (alta o edición inline)
+  // queda disponible al instante en ambos, sin esperar a un refetch.
+  const addLeagueToList = (league: League) => {
+    setLeagues((prev) => (prev.some((l) => l.id === league.id) ? prev : [...prev, league].sort((a, b) => a.name.localeCompare(b.name))));
+  };
 
   const restaurar = async (t: Tournament) => {
     setError(null);
@@ -132,23 +160,13 @@ export default function TournamentList() {
   const startEditLeague = (t: Tournament) => {
     setError(null);
     setEditingLeagueRowId(t.id);
-    setEditingLeagueValue(t.leagueName ?? "");
-    // Arranca "seleccionada": si el organizador guarda sin tocar el campo, reusa la
-    // misma liga en vez de crear una nueva con el mismo nombre.
     setEditingSelectedLeagueId(t.leagueId);
   };
 
   const saveLeague = async (t: Tournament) => {
     setError(null);
     try {
-      await api.updateTournament(
-        t.id,
-        editingSelectedLeagueId
-          ? { leagueId: editingSelectedLeagueId }
-          : editingLeagueValue.trim()
-            ? { leagueName: editingLeagueValue.trim() }
-            : { leagueId: null },
-      );
+      await api.updateTournament(t.id, { leagueId: editingSelectedLeagueId });
       setEditingLeagueRowId(null);
       load();
     } catch (err) {
@@ -172,6 +190,8 @@ export default function TournamentList() {
 
       {isOrganizer && showForm && (
         <NewTournamentForm
+          leagues={leagues}
+          onLeagueCreated={addLeagueToList}
           onCreated={() => {
             setShowForm(false);
             load();
@@ -203,12 +223,12 @@ export default function TournamentList() {
                 <div className="form-row" style={{ padding: "0 0.9rem 0.75rem", gap: "0.4rem" }}>
                   {editingLeagueRowId === t.id ? (
                     <>
-                      <LeaguePicker
+                      <LeagueSelect
                         idPrefix={`row-${t.id}`}
-                        value={editingLeagueValue}
-                        onValueChange={setEditingLeagueValue}
+                        leagues={leagues}
                         selectedId={editingSelectedLeagueId}
-                        onSelect={(l) => setEditingSelectedLeagueId(l?.id ?? null)}
+                        onSelect={setEditingSelectedLeagueId}
+                        onCreated={addLeagueToList}
                       />
                       <button type="button" className="btn btn--felt btn--sm" onClick={() => saveLeague(t)}>
                         Guardar
@@ -274,11 +294,18 @@ export default function TournamentList() {
   );
 }
 
-function NewTournamentForm({ onCreated }: { onCreated: () => void }) {
+function NewTournamentForm({
+  leagues,
+  onLeagueCreated,
+  onCreated,
+}: {
+  leagues: League[];
+  onLeagueCreated: (league: League) => void;
+  onCreated: () => void;
+}) {
   const [name, setName] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [numRounds, setNumRounds] = useState(5);
-  const [leagueName, setLeagueName] = useState("");
   const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -307,11 +334,7 @@ function NewTournamentForm({ onCreated }: { onCreated: () => void }) {
         name: name.trim(),
         date,
         numRounds,
-        ...(selectedLeagueId
-          ? { leagueId: selectedLeagueId }
-          : leagueName.trim()
-            ? { leagueName: leagueName.trim() }
-            : {}),
+        ...(selectedLeagueId ? { leagueId: selectedLeagueId } : {}),
       });
       onCreated();
     } catch (err) {
@@ -343,12 +366,12 @@ function NewTournamentForm({ onCreated }: { onCreated: () => void }) {
             onChange={(e) => setNumRounds(Number(e.target.value))}
           />
         </div>
-        <LeaguePicker
+        <LeagueSelect
           idPrefix="new"
-          value={leagueName}
-          onValueChange={setLeagueName}
+          leagues={leagues}
           selectedId={selectedLeagueId}
-          onSelect={(l) => setSelectedLeagueId(l?.id ?? null)}
+          onSelect={setSelectedLeagueId}
+          onCreated={onLeagueCreated}
         />
         <button type="submit" className="btn btn--felt" disabled={saving}>
           {saving ? "Creando…" : "Crear"}

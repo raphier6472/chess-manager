@@ -616,12 +616,18 @@ describe("padrón compartido", () => {
 });
 
 describe("campeonato anual", () => {
+  /** Crea una liga explícitamente (único camino posible desde la API). */
+  async function createLeague(agent: ReturnType<typeof request.agent>, name: string) {
+    const res = await agent.post("/api/leagues").send({ name });
+    expect(res.status).toBe(201);
+    return res.body.id as string;
+  }
+
   /** Torneo de 1 ronda con 2 jugadores donde uno gana, para controlar el puntaje final. */
   async function tournamentWithWinner(
     agent: ReturnType<typeof request.agent>,
     opts: {
       name: string;
-      leagueName?: string;
       leagueId?: string;
       winner: { rosterPlayerId?: string; lastName?: string };
       result: "win" | "draw" | "loss";
@@ -631,7 +637,7 @@ describe("campeonato anual", () => {
       name: opts.name,
       date: "2026-01-01",
       numRounds: 1,
-      ...(opts.leagueId ? { leagueId: opts.leagueId } : opts.leagueName ? { leagueName: opts.leagueName } : {}),
+      ...(opts.leagueId ? { leagueId: opts.leagueId } : {}),
     });
     expect(t.status).toBe(201);
     const tournamentId = t.body.id as string;
@@ -666,15 +672,16 @@ describe("campeonato anual", () => {
 
   it("suma el puntaje final de la misma persona solo entre los torneos de esa liga", async () => {
     const agent = await organizer();
+    const zephyrId = await createLeague(agent, "Liga Zephyr 2026");
+    const otraId = await createLeague(agent, "Otra liga");
 
     const a = await tournamentWithWinner(agent, {
       name: "Circuito enero",
-      leagueName: "Liga Zephyr 2026",
+      leagueId: zephyrId,
       winner: { lastName: "Campeón" },
       result: "win",
     });
-    // Reusa la liga por id (no por nombre repetido): así se prueba el mismo camino
-    // que usa el buscador "elegir o crear" del frontend.
+    // Reusa la misma liga por id en un segundo torneo.
     const b = await tournamentWithWinner(agent, {
       name: "Circuito marzo",
       leagueId: a.leagueId!,
@@ -684,7 +691,7 @@ describe("campeonato anual", () => {
     // Mismo jugador, pero en otra liga: no debe sumar a la primera.
     const otra = await tournamentWithWinner(agent, {
       name: "Circuito paralelo",
-      leagueName: "Otra liga",
+      leagueId: otraId,
       winner: { rosterPlayerId: a.rosterPlayerId },
       result: "win",
     });
@@ -727,23 +734,46 @@ describe("campeonato anual", () => {
       .send({ name: "Liga inválida", date: "2026-01-01", numRounds: 1, leagueId: "no-existe" });
     expect(res.status).toBe(404);
   });
+
+  it("regresión: mandar leagueName en vez de leagueId ya NO crea una liga (bug real de producción)", async () => {
+    // Antes, escribir un nombre de liga que no coincidía exactamente con ninguna
+    // sugerencia del buscador creaba una liga nueva en silencio -- en producción
+    // esto terminó creando dos ligas "Khol 2026" separadas y partiendo el
+    // campeonato en dos. Ahora la API solo entiende leagueId: leagueName ya no
+    // existe como forma de asociar (ni de crear) una liga desde /tournaments.
+    const agent = await organizer();
+    const before = await request(app).get("/api/ligas");
+    const countBefore = before.body.length;
+
+    const res = await agent.post("/api/tournaments").send({
+      name: "Circuito con leagueName suelto",
+      date: "2026-01-01",
+      numRounds: 1,
+      leagueName: "Liga Fantasma",
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.leagueId).toBeNull();
+    expect(res.body.leagueName).toBeNull();
+
+    const after = await request(app).get("/api/ligas");
+    expect(after.body.length).toBe(countBefore);
+    expect(after.body.some((l: { name: string }) => l.name === "Liga Fantasma")).toBe(false);
+  });
 });
 
 describe("marcar liga de un torneo", () => {
-  it("PATCH /tournaments/:id crea una liga por nombre, la reusa por id y la limpia", async () => {
+  it("PATCH /tournaments/:id asocia por leagueId y limpia con leagueId null", async () => {
     const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Liga Nueva" });
+    expect(liga.status).toBe(201);
+    const leagueId = liga.body.id as string;
+
     const t = await agent.post("/api/tournaments").send({ name: "Marcar liga", date: "2026-01-01", numRounds: 1 });
 
-    const set = await agent.patch(`/api/tournaments/${t.body.id}`).send({ leagueName: "Liga Nueva" });
+    const set = await agent.patch(`/api/tournaments/${t.body.id}`).send({ leagueId });
     expect(set.status).toBe(200);
+    expect(set.body.leagueId).toBe(leagueId);
     expect(set.body.leagueName).toBe("Liga Nueva");
-    const leagueId = set.body.leagueId as string;
-    expect(leagueId).toBeTruthy();
-
-    const reuse = await agent.patch(`/api/tournaments/${t.body.id}`).send({ leagueId });
-    expect(reuse.status).toBe(200);
-    expect(reuse.body.leagueId).toBe(leagueId);
-    expect(reuse.body.leagueName).toBe("Liga Nueva");
 
     const clear = await agent.patch(`/api/tournaments/${t.body.id}`).send({ leagueId: null });
     expect(clear.status).toBe(200);
@@ -758,7 +788,7 @@ describe("marcar liga de un torneo", () => {
     expect(res.status).toBe(404);
   });
 
-  it("400 si no manda leagueId ni leagueName", async () => {
+  it("400 si no manda leagueId", async () => {
     const agent = await organizer();
     const t = await agent.post("/api/tournaments").send({ name: "Liga sin campo", date: "2026-01-01", numRounds: 1 });
     const res = await agent.patch(`/api/tournaments/${t.body.id}`).send({});
@@ -768,18 +798,61 @@ describe("marcar liga de un torneo", () => {
   it("exige sesión de organizador", async () => {
     const agent = await organizer();
     const t = await agent.post("/api/tournaments").send({ name: "Liga sin sesión", date: "2026-01-01", numRounds: 1 });
-    const res = await request(app).patch(`/api/tournaments/${t.body.id}`).send({ leagueName: "X" });
+    const res = await request(app).patch(`/api/tournaments/${t.body.id}`).send({ leagueId: null });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("POST /leagues", () => {
+  it("crea una liga y exige sesión de organizador", async () => {
+    const agent = await organizer();
+    const res = await agent.post("/api/leagues").send({ name: "Liga Recreo" });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe("Liga Recreo");
+    expect(res.body.id).toBeTruthy();
+
+    expect((await request(app).post("/api/leagues").send({ name: "Sin sesión" })).status).toBe(401);
+  });
+
+  it("rechaza un nombre vacío", async () => {
+    const agent = await organizer();
+    expect((await agent.post("/api/leagues").send({ name: "" })).status).toBe(400);
+    expect((await agent.post("/api/leagues").send({})).status).toBe(400);
+  });
+
+  it("crear dos veces con el mismo nombre da dos ligas distintas (a propósito: el duplicado se evita en la interfaz -- eligiendo del selector -- no adivinando por nombre en el servidor)", async () => {
+    const agent = await organizer();
+    const first = await agent.post("/api/leagues").send({ name: "Liga Repetida" });
+    const second = await agent.post("/api/leagues").send({ name: "Liga Repetida" });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(first.body.id).not.toBe(second.body.id);
+  });
+
+  it("GET /leagues sin q devuelve todas las ligas; con q filtra por nombre", async () => {
+    const agent = await organizer();
+    await agent.post("/api/leagues").send({ name: "Liga Alfa" });
+    await agent.post("/api/leagues").send({ name: "Liga Beta" });
+
+    const all = await agent.get("/api/leagues");
+    expect(all.status).toBe(200);
+    expect(all.body.map((l: { name: string }) => l.name)).toEqual(expect.arrayContaining(["Liga Alfa", "Liga Beta"]));
+
+    const filtered = await agent.get("/api/leagues?q=Alfa");
+    expect(filtered.body.map((l: { name: string }) => l.name)).toEqual(["Liga Alfa"]);
+
+    expect((await request(app).get("/api/leagues")).status).toBe(401);
   });
 });
 
 describe("participantes ya inscritos en una liga", () => {
   it("GET /leagues/:id/participantes devuelve quienes ya jugaron otro torneo de la misma liga", async () => {
     const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Liga Part" });
+    const leagueId = liga.body.id as string;
     const t1 = await agent
       .post("/api/tournaments")
-      .send({ name: "Liga P1", date: "2026-01-01", numRounds: 1, leagueName: "Liga Part" });
-    const leagueId = t1.body.leagueId as string;
+      .send({ name: "Liga P1", date: "2026-01-01", numRounds: 1, leagueId });
     await agent.post(`/api/tournaments/${t1.body.id}/players`).send({ lastName: "Uno" });
 
     // Otro torneo, sin liga: no debe aparecer en la lista de la liga.
@@ -793,9 +866,10 @@ describe("participantes ya inscritos en una liga", () => {
 
   it("vacío para una liga recién creada", async () => {
     const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Liga Vacía" });
     const t = await agent
       .post("/api/tournaments")
-      .send({ name: "Liga vacía", date: "2026-01-01", numRounds: 1, leagueName: "Liga Vacía" });
+      .send({ name: "Liga vacía", date: "2026-01-01", numRounds: 1, leagueId: liga.body.id });
     const res = await agent.get(`/api/leagues/${t.body.leagueId}/participantes`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);

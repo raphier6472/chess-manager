@@ -40,26 +40,25 @@ const TOURNAMENT_SELECT =
 
 /**
  * Resuelve a qué liga queda enganchado un torneo a partir del body de POST/PATCH
- * /tournaments: leagueId reusa una liga existente (404 si no existe), leagueName
- * crea una liga nueva con ese nombre. Deliberadamente no busca por nombre para
- * reusar una liga existente sin que el organizador la elija a propósito -- mismo
- * motivo que en server/routes/players.ts con el padrón de jugadores.
+ * /tournaments: leagueId reusa una liga existente (404 si no existe), null/ausente
+ * lo deja sin liga. Deliberadamente NO acepta crear una liga por nombre acá --
+ * eso llevó en producción a crear dos ligas "Khol 2026" distintas la primera vez
+ * que alguien tipeó el nombre sin elegir la sugerencia. Crear una liga es ahora
+ * una acción separada y explícita: POST /leagues (ver server/routes/leagues.ts).
  */
 function resolveLeagueId(
   body: Record<string, unknown>,
 ): { ok: true; leagueId: string | null } | { ok: false; error: string } {
-  const { leagueId, leagueName } = body;
-  if (typeof leagueId === "string" && leagueId) {
-    const row = db.prepare("SELECT id FROM leagues WHERE id = ?").get(leagueId);
-    if (!row) return { ok: false, error: "no se encontró esa liga" };
-    return { ok: true, leagueId };
+  const { leagueId } = body;
+  if (leagueId === undefined || leagueId === null || leagueId === "") {
+    return { ok: true, leagueId: null };
   }
-  if (typeof leagueName === "string" && leagueName.trim()) {
-    const id = nanoid();
-    db.prepare("INSERT INTO leagues (id, name) VALUES (?, ?)").run(id, leagueName.trim());
-    return { ok: true, leagueId: id };
+  if (typeof leagueId !== "string") {
+    return { ok: false, error: "no se encontró esa liga" };
   }
-  return { ok: true, leagueId: null };
+  const row = db.prepare("SELECT id FROM leagues WHERE id = ?").get(leagueId);
+  if (!row) return { ok: false, error: "no se encontró esa liga" };
+  return { ok: true, leagueId };
 }
 
 /**
@@ -127,9 +126,9 @@ router.patch("/tournaments/:id", requireAuth, (req, res) => {
   const row = findActiveTournament(req.params.id);
   if (!row) return res.status(404).json({ error: "no se encontró el torneo" });
 
-  const { leagueId, leagueName } = req.body ?? {};
-  if (leagueId === undefined && leagueName === undefined) {
-    return res.status(400).json({ error: "falta el campo leagueId o leagueName" });
+  const { leagueId } = req.body ?? {};
+  if (leagueId === undefined) {
+    return res.status(400).json({ error: "falta el campo leagueId" });
   }
   const league = resolveLeagueId(req.body ?? {});
   if (!league.ok) return res.status(404).json({ error: league.error });

@@ -33,18 +33,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** Enganche a una liga: reusar una existente por id, o crear una nueva por nombre. */
-type LeagueSelection =
-  | { leagueId: string; leagueName?: undefined }
-  | { leagueName: string; leagueId?: undefined }
-  | { leagueId?: undefined; leagueName?: undefined };
-
 export const api = {
   listTournaments: () => request<Tournament[]>("/tournaments"),
-  createTournament: (input: { name: string; date: string; numRounds: number } & LeagueSelection) =>
+  createTournament: (input: { name: string; date: string; numRounds: number; leagueId?: string }) =>
     request<Tournament>("/tournaments", { method: "POST", body: JSON.stringify(input) }),
   getTournament: (id: string) => request<Tournament>(`/tournaments/${id}`),
-  updateTournament: (id: string, patch: { leagueId: string | null } | { leagueName: string }) =>
+  updateTournament: (id: string, patch: { leagueId: string | null }) =>
     request<Tournament>(`/tournaments/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteTournament: (id: string) => request<void>(`/tournaments/${id}`, { method: "DELETE" }),
   listPapelera: () => request<Tournament[]>("/tournaments-papelera"),
@@ -89,7 +83,9 @@ export const api = {
   getStandings: (tournamentId: string) => request<StandingsRow[]>(`/tournaments/${tournamentId}/standings`),
 
   listLeagues: () => request<League[]>("/ligas"),
-  searchLeagues: (q: string) => request<League[]>(`/leagues?q=${encodeURIComponent(q)}`),
+  listAllLeagues: () => request<League[]>("/leagues"),
+  createLeague: (name: string) =>
+    request<League>("/leagues", { method: "POST", body: JSON.stringify({ name }) }),
   listLeagueParticipants: (leagueId: string) =>
     request<RosterPlayer[]>(`/leagues/${leagueId}/participantes`),
   getChampionshipStandings: (leagueId: string) =>
