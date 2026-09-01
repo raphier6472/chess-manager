@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { League, Tournament } from "../types";
@@ -127,10 +127,14 @@ function LeagueSelect({
 
 export default function TournamentList() {
   const { isOrganizer } = useAuth();
+  const [searchParams] = useSearchParams();
+  // Llegar acá desde "Nuevo torneo" en el dashboard de un campeonato (ver
+  // CampeonatoDashboard.tsx) abre el formulario solo, con esa liga ya elegida.
+  const presetLeagueId = searchParams.get("leagueId");
   const [tournaments, setTournaments] = useState<Tournament[] | null>(null);
   const [leagues, setLeagues] = useState<League[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(() => !!presetLeagueId);
   const [papelera, setPapelera] = useState<Tournament[]>([]);
   const [showPapelera, setShowPapelera] = useState(false);
   const [editingLeagueRowId, setEditingLeagueRowId] = useState<string | null>(null);
@@ -217,6 +221,7 @@ export default function TournamentList() {
       {isOrganizer && showForm && (
         <NewTournamentForm
           leagues={leagues}
+          initialLeagueId={presetLeagueId}
           onLeagueCreated={addLeagueToList}
           onLeagueDeleted={removeLeagueFromList}
           onCreated={() => {
@@ -324,11 +329,13 @@ export default function TournamentList() {
 
 function NewTournamentForm({
   leagues,
+  initialLeagueId,
   onLeagueCreated,
   onLeagueDeleted,
   onCreated,
 }: {
   leagues: League[];
+  initialLeagueId?: string | null;
   onLeagueCreated: (league: League) => void;
   onLeagueDeleted: (id: string) => void;
   onCreated: () => void;
@@ -336,7 +343,7 @@ function NewTournamentForm({
   const [name, setName] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [numRounds, setNumRounds] = useState(5);
-  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(null);
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string | null>(initialLeagueId ?? null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
