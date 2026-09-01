@@ -23,12 +23,14 @@ function LeagueSelect({
   selectedId,
   onSelect,
   onCreated,
+  onDeleted,
 }: {
   idPrefix: string;
   leagues: League[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onCreated: (league: League) => void;
+  onDeleted: (id: string) => void;
 }) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -49,6 +51,20 @@ function LeagueSelect({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const deleteSelectedLeague = async () => {
+    if (!selectedId) return;
+    const league = leagues.find((l) => l.id === selectedId);
+    if (!confirm(`¿Eliminar la liga "${league?.name ?? ""}"? Esta acción no se puede deshacer.`)) return;
+    setError(null);
+    try {
+      await api.deleteLeague(selectedId);
+      onDeleted(selectedId);
+      onSelect(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -98,7 +114,13 @@ function LeagueSelect({
         <button type="button" className="btn btn--ghost btn--sm" onClick={() => setCreating(true)}>
           + Nueva liga
         </button>
+        {selectedId && (
+          <button type="button" className="btn btn--danger btn--sm" onClick={deleteSelectedLeague}>
+            Eliminar liga
+          </button>
+        )}
       </div>
+      {error && <p className="form-error">{error}</p>}
     </div>
   );
 }
@@ -130,10 +152,14 @@ export default function TournamentList() {
 
   useEffect(load, [isOrganizer]);
 
-  // Una liga creada desde cualquiera de los dos selectores (alta o edición inline)
-  // queda disponible al instante en ambos, sin esperar a un refetch.
+  // Una liga creada o eliminada desde cualquiera de los dos selectores (alta o
+  // edición inline) queda al día al instante en ambos, sin esperar a un refetch.
   const addLeagueToList = (league: League) => {
     setLeagues((prev) => (prev.some((l) => l.id === league.id) ? prev : [...prev, league].sort((a, b) => a.name.localeCompare(b.name))));
+  };
+
+  const removeLeagueFromList = (id: string) => {
+    setLeagues((prev) => prev.filter((l) => l.id !== id));
   };
 
   const restaurar = async (t: Tournament) => {
@@ -192,6 +218,7 @@ export default function TournamentList() {
         <NewTournamentForm
           leagues={leagues}
           onLeagueCreated={addLeagueToList}
+          onLeagueDeleted={removeLeagueFromList}
           onCreated={() => {
             setShowForm(false);
             load();
@@ -229,6 +256,7 @@ export default function TournamentList() {
                         selectedId={editingSelectedLeagueId}
                         onSelect={setEditingSelectedLeagueId}
                         onCreated={addLeagueToList}
+                        onDeleted={removeLeagueFromList}
                       />
                       <button type="button" className="btn btn--felt btn--sm" onClick={() => saveLeague(t)}>
                         Guardar
@@ -297,10 +325,12 @@ export default function TournamentList() {
 function NewTournamentForm({
   leagues,
   onLeagueCreated,
+  onLeagueDeleted,
   onCreated,
 }: {
   leagues: League[];
   onLeagueCreated: (league: League) => void;
+  onLeagueDeleted: (id: string) => void;
   onCreated: () => void;
 }) {
   const [name, setName] = useState("");
@@ -372,6 +402,7 @@ function NewTournamentForm({
           selectedId={selectedLeagueId}
           onSelect={setSelectedLeagueId}
           onCreated={onLeagueCreated}
+          onDeleted={onLeagueDeleted}
         />
         <button type="submit" className="btn btn--felt" disabled={saving}>
           {saving ? "Creando…" : "Crear"}

@@ -86,6 +86,7 @@ export const api = {
   listAllLeagues: () => request<League[]>("/leagues"),
   createLeague: (name: string) =>
     request<League>("/leagues", { method: "POST", body: JSON.stringify({ name }) }),
+  deleteLeague: (id: string) => request<void>(`/leagues/${id}`, { method: "DELETE" }),
   listLeagueParticipants: (leagueId: string) =>
     request<RosterPlayer[]>(`/leagues/${leagueId}/participantes`),
   getChampionshipStandings: (leagueId: string) =>
