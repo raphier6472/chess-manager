@@ -46,38 +46,12 @@ export default function CampeonatoDashboard() {
           </p>
           <h1>{board.leagueName}</h1>
         </div>
-      </div>
-
-      <div className="page-head">
-        <h2 style={{ margin: 0 }}>Torneos de esta liga</h2>
         {isOrganizer && (
-          <Link to={`/?leagueId=${board.leagueId}`} className="btn btn--primary btn--sm">
+          <Link to={`/?leagueId=${board.leagueId}`} className="btn btn--primary">
             Nuevo torneo
           </Link>
         )}
       </div>
-
-      {board.tournaments.length === 0 ? (
-        <p className="empty-state">Esta liga todavía no tiene torneos.</p>
-      ) : (
-        <ul className="tournament-list">
-          {board.tournaments.map((t) => (
-            <li key={t.id} className="card">
-              <Link to={`/t/${t.id}`} className="tournament-row">
-                <div>
-                  <div className="tournament-row__name">{t.name}</div>
-                  <div className="tournament-row__meta">
-                    {t.date} · {t.numRounds} rondas
-                  </div>
-                </div>
-                <span className={`badge ${t.status === "active" ? "badge--active" : t.status === "completed" ? "badge--completed" : ""}`}>
-                  {STATUS_LABEL[t.status]}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
 
       <h2>Tabla acumulada</h2>
 
@@ -118,6 +92,30 @@ export default function CampeonatoDashboard() {
             </tbody>
           </table>
         </div>
+      )}
+
+      <h2>Torneos de esta liga</h2>
+
+      {board.tournaments.length === 0 ? (
+        <p className="empty-state">Esta liga todavía no tiene torneos.</p>
+      ) : (
+        <ul className="tournament-list">
+          {board.tournaments.map((t) => (
+            <li key={t.id} className="card">
+              <Link to={`/t/${t.id}`} className="tournament-row">
+                <div>
+                  <div className="tournament-row__name">{t.name}</div>
+                  <div className="tournament-row__meta">
+                    {t.date} · {t.numRounds} rondas
+                  </div>
+                </div>
+                <span className={`badge ${t.status === "active" ? "badge--active" : t.status === "completed" ? "badge--completed" : ""}`}>
+                  {STATUS_LABEL[t.status]}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
