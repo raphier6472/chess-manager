@@ -737,7 +737,7 @@ describe("campeonato anual", () => {
     const ligaId = await createLeague(agent, "Liga Desempate");
 
     // A gana un torneo (1 punto en 1 torneo jugado).
-    const a = await tournamentWithWinner(agent, {
+    await tournamentWithWinner(agent, {
       name: "Torneo 1",
       leagueId: ligaId,
       winner: { lastName: "Constante" },
