@@ -845,6 +845,62 @@ describe("POST /leagues", () => {
   });
 });
 
+describe("DELETE /leagues/:id", () => {
+  it("elimina una liga sin torneos asociados", async () => {
+    const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Liga Descartable" });
+    const res = await agent.delete(`/api/leagues/${liga.body.id}`);
+    expect(res.status).toBe(204);
+
+    const restantes = await agent.get("/api/leagues");
+    expect(restantes.body.some((l: { id: string }) => l.id === liga.body.id)).toBe(false);
+  });
+
+  it("409 si un torneo activo la referencia", async () => {
+    const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Liga En Uso" });
+    await agent.post("/api/tournaments").send({
+      name: "Torneo con liga",
+      date: "2026-01-01",
+      numRounds: 1,
+      leagueId: liga.body.id,
+    });
+
+    const res = await agent.delete(`/api/leagues/${liga.body.id}`);
+    expect(res.status).toBe(409);
+
+    // Sigue existiendo: el borrado se rechazó, no quedó a medias.
+    const restantes = await agent.get("/api/leagues");
+    expect(restantes.body.some((l: { id: string }) => l.id === liga.body.id)).toBe(true);
+  });
+
+  it("409 si solo un torneo en la papelera la referencia (evita romper la restricción de SQLite)", async () => {
+    const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Liga Con Torneo Borrado" });
+    const t = await agent.post("/api/tournaments").send({
+      name: "Torneo a la papelera",
+      date: "2026-01-01",
+      numRounds: 1,
+      leagueId: liga.body.id,
+    });
+    await agent.delete(`/api/tournaments/${t.body.id}`);
+
+    const res = await agent.delete(`/api/leagues/${liga.body.id}`);
+    expect(res.status).toBe(409);
+  });
+
+  it("404 si la liga no existe", async () => {
+    const agent = await organizer();
+    expect((await agent.delete("/api/leagues/no-existe")).status).toBe(404);
+  });
+
+  it("exige sesión de organizador", async () => {
+    const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Liga Sin Sesión" });
+    expect((await request(app).delete(`/api/leagues/${liga.body.id}`)).status).toBe(401);
+  });
+});
+
 describe("participantes ya inscritos en una liga", () => {
   it("GET /leagues/:id/participantes devuelve quienes ya jugaron otro torneo de la misma liga", async () => {
     const agent = await organizer();
