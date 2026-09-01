@@ -143,18 +143,48 @@ button {
 
 /* ---------- App shell ---------- */
 
-.app-header {
-  background: var(--board-dark);
-  color: var(--board-light);
-  padding: 0.9rem 1.5rem;
+.app-shell {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  border-bottom: 2px solid var(--signal);
+  min-height: 100vh;
 }
 
-.app-header__mark {
+.app-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sidebar: pinned open on desktop (see the min-width breakpoint below), an
+   off-canvas drawer on mobile — same markup, only the transform changes. */
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 230px;
+  background: var(--board-dark);
+  color: var(--board-light);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.25rem 1.1rem;
+  border-right: 2px solid var(--signal);
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+  z-index: 50;
+}
+
+.sidebar--open {
+  transform: translateX(0);
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 40;
+}
+
+.sidebar__mark {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -167,29 +197,70 @@ button {
   color: var(--board-light);
 }
 
-.app-header__mark svg {
+.sidebar__mark svg {
   color: var(--signal);
 }
 
-.app-header__context {
+.sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.sidebar__nav a {
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  color: #c7ccd1;
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+
+.sidebar__nav a:hover {
+  color: var(--board-light);
+  background: var(--board-dark-raised);
+}
+
+.sidebar__nav a.active {
+  color: var(--board-light);
+  background: var(--board-dark-raised);
+  font-weight: 600;
+}
+
+.sidebar__footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid #2a2f35;
+}
+
+.sidebar__organizer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.sidebar__organizer-name {
+  font-weight: 600;
+  color: var(--board-light);
+}
+
+.sidebar__organizer-role {
   font-family: var(--font-mono);
   font-size: 0.78rem;
   letter-spacing: 0.02em;
   color: #9aa4ac;
 }
 
-.app-header .btn--ghost {
+.sidebar .btn--ghost {
   border-color: #3a4148;
   color: var(--board-light);
 }
-.app-header .btn--ghost:hover:not(:disabled) {
+.sidebar .btn--ghost:hover:not(:disabled) {
   border-color: var(--board-light);
-}
-
-.app-header__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 .btn--sm.theme-toggle {
@@ -198,6 +269,69 @@ button {
   justify-content: center;
   padding: 0.4rem;
   line-height: 1;
+}
+
+/* Mobile: slim top bar with the drawer toggle, hidden once the sidebar is
+   pinned open on desktop (see the min-width breakpoint below). */
+.mobile-topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem 1.1rem;
+  background: var(--board-dark);
+  color: var(--board-light);
+  border-bottom: 2px solid var(--signal);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.hamburger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--board-light);
+  cursor: pointer;
+}
+
+.mobile-topbar__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  color: var(--board-light);
+}
+
+.mobile-topbar__mark svg {
+  color: var(--signal);
+}
+
+/* No breakpoint exists yet for "desktop" elsewhere in this file — the ones
+   below 560px are narrow-screen tweaks. This is the one place the sidebar
+   switches from an off-canvas drawer to a permanently pinned column. */
+@media (min-width: 860px) {
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    transform: none;
+  }
+
+  .sidebar-backdrop,
+  .mobile-topbar {
+    display: none;
+  }
 }
 
 .app-main {
