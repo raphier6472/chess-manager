@@ -121,7 +121,7 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
   } else {
     const matches = db
       .prepare(
-        `SELECT m.white_id, m.black_id, m.result, m.forfeit
+        `SELECT m.white_id, m.black_id, m.result, m.forfeit, r.number AS round_number
          FROM matches m JOIN rounds r ON r.id = m.round_id
          WHERE r.tournament_id = ?
          ORDER BY r.number`,
@@ -131,6 +131,7 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
       black_id: string | null;
       result: string;
       forfeit: number;
+      round_number: number;
     }>;
 
     const scoreOf = new Map<string, number>();
@@ -152,32 +153,61 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
       if (scoreOf.has(id)) scoreOf.set(id, scoreOf.get(id)! + pts);
     };
 
+    // Walk the rounds in order rather than the flat match list: telling who
+    // floated down needs the scores as they stood when that round was paired,
+    // which only exists partway through the replay.
+    const roundsPlayed = new Map<number, typeof matches>();
     for (const m of matches) {
-      if (m.black_id === null) {
-        if (hadByeOf.has(m.white_id)) hadByeOf.set(m.white_id, true);
-        addScore(m.white_id, 1);
-        continue;
+      const list = roundsPlayed.get(m.round_number);
+      if (list) list.push(m);
+      else roundsPlayed.set(m.round_number, [m]);
+    }
+    let downfloatedLastRound = new Set<string>();
+
+    for (const roundNumber of [...roundsPlayed.keys()].sort((a, b) => a - b)) {
+      const roundMatches = roundsPlayed.get(roundNumber)!;
+
+      // Scores here are still the ones this round was paired on. In a pair of
+      // different scores the higher-scoring player is the one who was moved
+      // down out of their own score group.
+      const downfloaters = new Set<string>();
+      for (const m of roundMatches) {
+        if (m.black_id === null) continue;
+        const whiteScore = scoreOf.get(m.white_id);
+        const blackScore = scoreOf.get(m.black_id);
+        if (whiteScore === undefined || blackScore === undefined) continue;
+        if (whiteScore > blackScore) downfloaters.add(m.white_id);
+        else if (blackScore > whiteScore) downfloaters.add(m.black_id);
       }
-      // Being paired counts even when the game was not played, so the two
-      // never meet again...
-      opponentsOf.get(m.white_id)?.add(m.black_id);
-      opponentsOf.get(m.black_id)?.add(m.white_id);
-      // ...but a forfeited game is not a game of chess: FIDE counts the color
-      // difference and the color sequence over played games only, so a W.O.
-      // must not leave a color behind.
-      if (m.forfeit !== 1) {
-        colorHistoryOf.get(m.white_id)?.push("white");
-        colorHistoryOf.get(m.black_id)?.push("black");
-      }
-      if (m.result === "white") {
-        addScore(m.white_id, 1);
-        if (m.forfeit === 1) hadForfeitWinOf.set(m.white_id, true);
-      } else if (m.result === "black") {
-        addScore(m.black_id, 1);
-        if (m.forfeit === 1) hadForfeitWinOf.set(m.black_id, true);
-      } else if (m.result === "draw") {
-        addScore(m.white_id, 0.5);
-        addScore(m.black_id, 0.5);
+      downfloatedLastRound = downfloaters;
+
+      for (const m of roundMatches) {
+        if (m.black_id === null) {
+          if (hadByeOf.has(m.white_id)) hadByeOf.set(m.white_id, true);
+          addScore(m.white_id, 1);
+          continue;
+        }
+        // Being paired counts even when the game was not played, so the two
+        // never meet again...
+        opponentsOf.get(m.white_id)?.add(m.black_id);
+        opponentsOf.get(m.black_id)?.add(m.white_id);
+        // ...but a forfeited game is not a game of chess: FIDE counts the color
+        // difference and the color sequence over played games only, so a W.O.
+        // must not leave a color behind.
+        if (m.forfeit !== 1) {
+          colorHistoryOf.get(m.white_id)?.push("white");
+          colorHistoryOf.get(m.black_id)?.push("black");
+        }
+        if (m.result === "white") {
+          addScore(m.white_id, 1);
+          if (m.forfeit === 1) hadForfeitWinOf.set(m.white_id, true);
+        } else if (m.result === "black") {
+          addScore(m.black_id, 1);
+          if (m.forfeit === 1) hadForfeitWinOf.set(m.black_id, true);
+        } else if (m.result === "draw") {
+          addScore(m.white_id, 0.5);
+          addScore(m.black_id, 0.5);
+        }
       }
     }
 
@@ -185,11 +215,14 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
       .filter((p) => !manualByeSet.has(p.id))
       .map((p) => ({
         id: p.id,
+        lastName: p.last_name,
+        firstName: p.first_name,
         score: scoreOf.get(p.id) ?? 0,
         colorHistory: colorHistoryOf.get(p.id) ?? [],
         opponents: opponentsOf.get(p.id) ?? new Set(),
         hadBye: hadByeOf.get(p.id) ?? false,
         hadForfeitWin: hadForfeitWinOf.get(p.id) ?? false,
+        downfloatedLastRound: downfloatedLastRound.has(p.id),
         rating: p.rating,
       }));
 

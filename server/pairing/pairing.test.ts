@@ -19,11 +19,16 @@ function player(
 ): PairingPlayer {
   return {
     id,
+    // The surname defaults to the id so equal-rating ties stay deterministic
+    // in tests that do not care about names.
+    lastName: id,
+    firstName: "",
     score,
     colorHistory: [],
     opponents: new Set(),
     hadBye: false,
     hadForfeitWin: false,
+    downfloatedLastRound: false,
     rating: null,
     ...opts,
   };
@@ -503,6 +508,7 @@ describe("generatePairings — torneo completo", () => {
     colorHistory: Color[];
     opponents: Set<string>;
     hadBye: boolean;
+    downfloatedLastRound: boolean;
   }
 
   function runTournament(playerCount: number, rounds: number, seedValue: number) {
@@ -514,24 +520,45 @@ describe("generatePairings — torneo completo", () => {
       colorHistory: [],
       opponents: new Set<string>(),
       hadBye: false,
+      downfloatedLastRound: false,
     }));
     const byId = new Map(players.map((p) => [p.id, p]));
     const byeCounts = new Map<string, number>();
     const rematches: string[] = [];
     const colorBreaks: string[] = [];
+    let downfloats = 0;
+    let repeatDownfloats = 0;
 
     for (let round = 0; round < rounds; round++) {
       const { pairs, bye } = generatePairings(
         players.map((p) => ({
           id: p.id,
+          lastName: p.id,
+          firstName: "",
           score: p.score,
           rating: p.rating,
           colorHistory: p.colorHistory,
           opponents: p.opponents,
           hadBye: p.hadBye,
           hadForfeitWin: false,
+          downfloatedLastRound: p.downfloatedLastRound,
         })),
       );
+
+      // Whoever is the higher-scoring half of a mixed-score pair was moved
+      // down out of their own group this round.
+      const floatedNow = new Set<string>();
+      for (const pair of pairs) {
+        const white = byId.get(pair.white)!;
+        const black = byId.get(pair.black)!;
+        if (white.score === black.score) continue;
+        const downfloater = white.score > black.score ? white : black;
+        floatedNow.add(downfloater.id);
+        downfloats++;
+        if (downfloater.downfloatedLastRound) {
+          repeatDownfloats++;
+        }
+      }
 
       const playing = new Set<string>();
       for (const pair of pairs) {
@@ -562,6 +589,8 @@ describe("generatePairings — torneo completo", () => {
       // Everyone is accounted for every round: paired or on the bye.
       expect(playing.size).toBe(playerCount);
 
+      for (const p of players) p.downfloatedLastRound = floatedNow.has(p.id);
+
       // The color rules are checked after every round, not just at the end: a
       // player can go out of balance in one round and be brought back by the
       // next, and a final-state check would quietly miss it.
@@ -575,7 +604,7 @@ describe("generatePairings — torneo completo", () => {
       }
     }
 
-    return { players, byeCounts, rematches, colorBreaks };
+    return { players, byeCounts, rematches, colorBreaks, downfloats, repeatDownfloats };
   }
 
   it("plays 7 rounds with 16 players breaking no rule at any point", () => {
@@ -643,6 +672,90 @@ describe("generatePairings — posiciones apretadas", () => {
     }
     expect(outOfBalance).toBe(0);
     expect(tripleColor).toBe(0);
+  });
+});
+
+describe("generatePairings — orden explicable (FIDE C.04.1.i)", () => {
+  it("separates equally-rated players by surname, never by the internal id", () => {
+    // Mismo puntaje y mismo Elo: la clasificación es alfabética, así que
+    // Alvarez va por delante de Zapata y el bye le toca a Zapata, el último
+    // de la lista. Los ids van al revés que los apellidos a propósito: si el
+    // desempate siguiera mirando el id, el bye caería en Alvarez.
+    const players = [
+      player("p1", 1, { rating: 2000, lastName: "Uno" }),
+      player("p2", 1, { rating: 1900, lastName: "Dos" }),
+      player("p3", 1, { rating: 1800, lastName: "Tres" }),
+      player("zzz", 0, { rating: 1200, lastName: "Alvarez" }),
+      player("aaa", 0, { rating: 1200, lastName: "Zapata" }),
+    ];
+    expect(generatePairings(players).bye).toBe("aaa");
+  });
+
+  it("uses the given name when the surname is also shared", () => {
+    const players = [
+      player("p1", 1, { rating: 2000, lastName: "Uno" }),
+      player("p2", 1, { rating: 1900, lastName: "Dos" }),
+      player("p3", 1, { rating: 1800, lastName: "Tres" }),
+      player("zzz", 0, { rating: 1200, lastName: "Salazar", firstName: "Ana" }),
+      player("aaa", 0, { rating: 1200, lastName: "Salazar", firstName: "Diego" }),
+    ];
+    // Diego va después de Ana, así que el bye es de Diego — id "aaa", el que
+    // un desempate por id nunca habría elegido.
+    expect(generatePairings(players).bye).toBe("aaa");
+  });
+
+  it("ranks boards by surname when two players share a rating", () => {
+    // El plegado ordena el grupo por Elo y, a igual Elo, alfabéticamente:
+    // Alvarez es cabeza de serie y juega la mesa 1.
+    const players = [
+      player("zzz", 1, { rating: 2000, lastName: "Alvarez" }),
+      player("aaa", 1, { rating: 2000, lastName: "Zapata" }),
+      player("c", 1, { rating: 1000, lastName: "Castro" }),
+      player("d", 1, { rating: 900, lastName: "Diaz" }),
+    ];
+    const { pairs } = generatePairings(players);
+    expect([pairs[0].white, pairs[0].black]).toContain("zzz");
+  });
+});
+
+describe("generatePairings — flotantes repetidos", () => {
+  const group = (extra: Partial<PairingPlayer> = {}) => [
+    player("top", 1, { rating: 2000 }),
+    player("mid", 1, { rating: 1500 }),
+    player("justFloated", 1, { rating: 1000, ...extra }),
+    player("low1", 0, { rating: 900 }),
+    player("low2", 0, { rating: 800 }),
+    player("low3", 0, { rating: 700 }),
+  ];
+
+  it("floats the lowest-rated player when nobody floated last round", () => {
+    const { pairs } = generatePairings(group());
+    expect(opponentOf(pairs, "justFloated")).toBe("low1");
+    expect(opponentOf(pairs, "top")).toBe("mid");
+  });
+
+  it("floats somebody else when the usual choice already floated last round", () => {
+    // FIDE pide no hacer bajar de grupo al mismo jugador dos rondas seguidas,
+    // aunque sea el de menor Elo del grupo impar.
+    const { pairs } = generatePairings(group({ downfloatedLastRound: true }));
+    expect(opponentOf(pairs, "justFloated")).toBe("top");
+    expect(opponentOf(pairs, "mid")).toBe("low1");
+  });
+
+  it("still floats a repeat floater when there is no other way to pair", () => {
+    // "mid" y "top" ya jugaron contra todos los del grupo de abajo, así que
+    // el único flotante posible sigue siendo el que ya bajó la ronda pasada.
+    const players = [
+      player("top", 1, { rating: 2000, opponents: new Set(["low1", "low2", "low3"]) }),
+      player("mid", 1, { rating: 1500, opponents: new Set(["low1", "low2", "low3"]) }),
+      player("justFloated", 1, { rating: 1000, downfloatedLastRound: true }),
+      player("low1", 0, { rating: 900, opponents: new Set(["top", "mid"]) }),
+      player("low2", 0, { rating: 800, opponents: new Set(["top", "mid"]) }),
+      player("low3", 0, { rating: 700, opponents: new Set(["top", "mid"]) }),
+    ];
+    const { pairs } = generatePairings(players);
+    expect(opponentOf(pairs, "top")).toBe("mid");
+    expect(opponentOf(pairs, "justFloated")).toBe("low1");
   });
 });
 

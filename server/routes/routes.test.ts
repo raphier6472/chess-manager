@@ -477,6 +477,79 @@ describe("orden de mesas por Elo", () => {
   });
 });
 
+describe("flotantes entre rondas", () => {
+  it("no hace bajar de grupo al mismo jugador dos rondas seguidas", async () => {
+    // Ejercita la reconstrucción ronda por ronda de rounds.ts: para saber quién
+    // flotó hay que conocer los puntajes tal como estaban cuando se emparejó
+    // esa ronda, no los finales.
+    const agent = await organizer();
+    const t = await agent
+      .post("/api/tournaments")
+      .send({ name: "Flotantes", date: "2026-09-08", numRounds: 3 });
+    const tid = t.body.id as string;
+    const ids: Record<string, string> = {};
+    // 10 jugadores y 3 rondas, ganando siempre el favorito: sin la corrección
+    // el quinto cabeza de serie baja de grupo en la ronda 2 y otra vez en la 3.
+    const ratings: Record<string, number> = {
+      A: 2200, B: 2100, C: 2000, D: 1900, E: 1800,
+      F: 1700, G: 1600, H: 1500, I: 1400, J: 1300,
+    };
+    for (const [lastName, rating] of Object.entries(ratings)) {
+      const p = await agent.post(`/api/tournaments/${tid}/players`).send({ lastName, rating });
+      ids[lastName] = p.body.id;
+    }
+    const nameOf = new Map(Object.entries(ids).map(([n, id]) => [id, n]));
+
+    const score = new Map(Object.values(ids).map((id) => [id, 0]));
+    const opponents = new Map(Object.values(ids).map((id) => [id, new Set<string>()]));
+    const byes = new Map<string, number>();
+    let previousFloaters = new Set<string>();
+
+    for (let round = 1; round <= 3; round++) {
+      const r = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+      expect(r.status).toBe(201);
+
+      const floaters = new Set<string>();
+      for (const m of r.body.matches as Array<{ id: string; whiteId: string; blackId: string | null }>) {
+        if (m.blackId === null) {
+          byes.set(m.whiteId, (byes.get(m.whiteId) ?? 0) + 1);
+          expect(byes.get(m.whiteId)).toBe(1);
+          continue;
+        }
+        expect(opponents.get(m.whiteId)!.has(m.blackId)).toBe(false);
+        const whiteScore = score.get(m.whiteId)!;
+        const blackScore = score.get(m.blackId)!;
+        if (whiteScore !== blackScore) {
+          floaters.add(whiteScore > blackScore ? m.whiteId : m.blackId);
+        }
+      }
+
+      // Siempre queda algún candidato alternativo para bajar, así que nadie
+      // debería tener que repetir flotante.
+      for (const id of floaters) {
+        expect(
+          previousFloaters.has(id),
+          `${nameOf.get(id)} bajó de grupo en la ronda ${round} y también en la ${round - 1}`,
+        ).toBe(false);
+      }
+      previousFloaters = floaters;
+
+      // El de mayor Elo de cada mesa gana, para que los grupos se separen.
+      for (const m of r.body.matches as Array<{ id: string; whiteId: string; blackId: string | null }>) {
+        if (m.blackId === null) { score.set(m.whiteId, score.get(m.whiteId)! + 1); continue; }
+        opponents.get(m.whiteId)!.add(m.blackId);
+        opponents.get(m.blackId)!.add(m.whiteId);
+        const winner = ratings[nameOf.get(m.whiteId)!] > ratings[nameOf.get(m.blackId)!] ? m.whiteId : m.blackId;
+        await agent
+          .post(`/api/matches/${m.id}/result`)
+          .send({ result: winner === m.whiteId ? "white" : "black" });
+        score.set(winner, score.get(winner)! + 1);
+      }
+      expect((await agent.post(`/api/rounds/${r.body.id}/complete`)).status).toBe(200);
+    }
+  });
+});
+
 describe("walkover (W.O.) y emparejamiento", () => {
   /** Busca la mesa donde juega `playerId` y le da la victoria. */
   async function winsBy(

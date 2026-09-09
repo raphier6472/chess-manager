@@ -38,6 +38,9 @@ export interface ColorPreference {
 /** Everything the color rules need to know about a player. */
 export interface ColorCandidate {
   id: string;
+  /** Used to separate two players of equal rating, as the seeding does. */
+  lastName: string;
+  firstName: string;
   rating: number | null;
   /**
    * Colors of the games this player actually played, oldest first. Byes and
@@ -107,11 +110,20 @@ export function colorsCompatible(a: ColorCandidate, b: ColorCandidate): boolean 
   );
 }
 
-/** Deterministic "who decides" ordering: higher rating first, unrated last, then id. */
+/**
+ * Deterministic "who decides" ordering: higher rating first, unrated last,
+ * then alphabetically by surname and given name — the same ranking the
+ * seeding uses, so the arbiter can explain why one of two equally-rated
+ * players got the color (FIDE C.04.1.i). The id is only a last resort.
+ */
 function outranks(a: ColorCandidate, b: ColorCandidate): boolean {
   const ratingA = a.rating ?? -Infinity;
   const ratingB = b.rating ?? -Infinity;
   if (ratingA !== ratingB) return ratingA > ratingB;
+  const lastNames = a.lastName.localeCompare(b.lastName, "es");
+  if (lastNames !== 0) return lastNames < 0;
+  const firstNames = a.firstName.localeCompare(b.firstName, "es");
+  if (firstNames !== 0) return firstNames < 0;
   return a.id < b.id;
 }
 
