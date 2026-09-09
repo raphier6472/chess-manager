@@ -1,5 +1,5 @@
 import { maxWeightMatching } from "./blossom";
-import { assignColors, colorsCompatible, type Color } from "./colors";
+import { assignColors, colorsCompatible, deniedPreference, type Color } from "./colors";
 
 export type { Color };
 
@@ -10,6 +10,12 @@ export interface PairingPlayer {
   colorHistory: readonly Color[];
   opponents: ReadonlySet<string>;
   hadBye: boolean;
+  /**
+   * Whether this player has already scored a win because an opponent did not
+   * turn up. FIDE C.04.1.d bars them from the pairing-allocated bye just as a
+   * previous bye does: both already handed them a point without a game.
+   */
+  hadForfeitWin: boolean;
   rating: number | null;
 }
 
@@ -92,16 +98,38 @@ export function generateInitialPairings(
 
 // Weights are integers so the matching algorithm stays exact. Inside a
 // bracket every edge starts from FOLD_BASE and loses FOLD_STEP for each step
-// away from the ideal fold partner. The magnitudes are separated far enough
-// that the sum of every fold deviation in a bracket can never outweigh a
-// single color violation, and the sum of every color violation can never
-// outweigh a single repeat pairing — so the matching only ever buys a rule
-// break when there is literally no alternative. FOLD_BASE is large enough
-// that even a doubly-penalised edge keeps a positive weight.
-const FOLD_BASE = 2_000_000_000;
+// away from the ideal fold partner, plus a penalty for each rule it bends.
+//
+// The tiers are spaced so that the worst possible total at one tier still
+// cannot outweigh a single penalty from the tier above, for fields up to
+// roughly 60 players: every fold deviation combined loses to one denied mild
+// preference, every denied mild preference loses to one denied strong
+// preference, and so on up to a repeat pairing. So the matching only ever
+// bends a rule when there is no alternative, and always bends the cheapest
+// one. FOLD_BASE stays above the sum of every penalty, so weights stay
+// positive, and the largest total stays far inside exact integer range.
+const FOLD_BASE = 2_000_000_000_000;
 const FOLD_STEP = 10;
-const COLOR_VIOLATION_PENALTY = 10_000_000;
-const REMATCH_PENALTY = 1_000_000_000;
+const MILD_PREFERENCE_PENALTY = 1_000_000;
+const STRONG_PREFERENCE_PENALTY = 100_000_000;
+const COLOR_VIOLATION_PENALTY = 10_000_000_000;
+const REMATCH_PENALTY = 1_000_000_000_000;
+
+/**
+ * Cost of the color preference this pairing would have to deny. An "absolute"
+ * denial is exactly what an incompatible pair is, and that is already charged
+ * COLOR_VIOLATION_PENALTY, so it is not counted twice here.
+ */
+function preferencePenalty(a: PairingPlayer, b: PairingPlayer): number {
+  switch (deniedPreference(a, b)) {
+    case "strong":
+      return STRONG_PREFERENCE_PENALTY;
+    case "mild":
+      return MILD_PREFERENCE_PENALTY;
+    default:
+      return 0;
+  }
+}
 
 /**
  * Constraints are dropped one at a time, hardest last, and only when the
@@ -171,19 +199,24 @@ function byByePreference(a: PairingPlayer, b: PairingPlayer): number {
 }
 
 /**
- * Who should get the bye, best candidate first, split by whether they have
- * already had one. A second bye hands out a free point to someone who has
- * already been handed one, which skews the standings more than any other
- * concession, so the repeat list is only consulted after every other rule has
- * already been tried and relaxed.
+ * FIDE C.04.1.d: a player may not receive the pairing-allocated bye if they
+ * have already had one, or have already won a game by forfeit because an
+ * opponent did not turn up — either way they have already been given a point
+ * without playing.
+ *
+ * Who should get the bye, best candidate first, split by eligibility. Handing
+ * a second free point to the same player skews the standings more than any
+ * other concession, so the ineligible list is only consulted after every
+ * other rule has already been tried and relaxed.
  */
 function byeCandidates(players: PairingPlayer[]): {
   eligible: PairingPlayer[];
   repeat: PairingPlayer[];
 } {
+  const eligibleForBye = (p: PairingPlayer) => !p.hadBye && !p.hadForfeitWin;
   return {
-    eligible: players.filter((p) => !p.hadBye).sort(byByePreference),
-    repeat: players.filter((p) => p.hadBye).sort(byByePreference),
+    eligible: players.filter(eligibleForBye).sort(byByePreference),
+    repeat: players.filter((p) => !eligibleForBye(p)).sort(byByePreference),
   };
 }
 
@@ -269,7 +302,8 @@ function matchBracket(
       const deviation = Math.abs(j - ideal[i]) + Math.abs(i - ideal[j]);
       let weight = FOLD_BASE - deviation * FOLD_STEP;
       if (rematch) weight -= REMATCH_PENALTY;
-      if (!colorOk) weight -= COLOR_VIOLATION_PENALTY;
+      if (colorOk) weight -= preferencePenalty(a, b);
+      else weight -= COLOR_VIOLATION_PENALTY;
       edges.push([i, j, Math.max(1, weight)]);
     }
   }
@@ -397,7 +431,8 @@ function matchWholeField(field: PairingPlayer[], relax: Relaxation): PairingPair
       let weight =
         FOLD_BASE - scoreGap * GLOBAL_SCORE_STEP - Math.abs(j - i - idealSpan) * FOLD_STEP;
       if (rematch) weight -= REMATCH_PENALTY;
-      if (!colorOk) weight -= COLOR_VIOLATION_PENALTY;
+      if (colorOk) weight -= preferencePenalty(a, b);
+      else weight -= COLOR_VIOLATION_PENALTY;
       edges.push([i, j, Math.max(1, weight)]);
     }
   }

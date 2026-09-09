@@ -477,6 +477,96 @@ describe("orden de mesas por Elo", () => {
   });
 });
 
+describe("walkover (W.O.) y emparejamiento", () => {
+  /** Busca la mesa donde juega `playerId` y le da la victoria. */
+  async function winsBy(
+    agent: ReturnType<typeof request.agent>,
+    round: { body: { matches: Array<{ id: string; whiteId: string; blackId: string | null }> } },
+    playerId: string,
+    forfeit = false,
+  ) {
+    const match = round.body.matches.find(
+      (m) => m.blackId !== null && (m.whiteId === playerId || m.blackId === playerId),
+    );
+    expect(match).toBeDefined();
+    const res = await agent
+      .post(`/api/matches/${match!.id}/result`)
+      .send({ result: match!.whiteId === playerId ? "white" : "black", forfeit });
+    expect(res.status).toBe(200);
+  }
+
+  const byeOf = (round: { body: { matches: Array<{ whiteId: string; blackId: string | null }> } }) =>
+    round.body.matches.find((m) => m.blackId === null)?.whiteId ?? null;
+
+  it("una partida no jugada no deja color en el historial", async () => {
+    // FIDE cuenta la diferencia y la secuencia de colores solo sobre partidas
+    // jugadas. Si la ronda 1 entera se pierde por incomparecencia, en la ronda
+    // 2 nadie arrastra color y en cada mesa las blancas van al de mayor Elo.
+    // Con el fallo, los blancos de la ronda 1 quedaban "debiendo" negras y las
+    // blancas de la ronda 2 caían en el de menor Elo de cada mesa.
+    const agent = await organizer();
+    const t = await agent
+      .post("/api/tournaments")
+      .send({ name: "W.O. y colores", date: "2026-09-08", numRounds: 3 });
+    const tid = t.body.id as string;
+    const ids: Record<string, string> = {};
+    const ratings: Record<string, number> = { A: 2000, B: 1900, C: 1800, D: 1700 };
+    for (const [lastName, rating] of Object.entries(ratings)) {
+      const p = await agent.post(`/api/tournaments/${tid}/players`).send({ lastName, rating });
+      ids[lastName] = p.body.id;
+    }
+    const ratingOf = new Map(Object.entries(ids).map(([name, id]) => [id, ratings[name]]));
+
+    const r1 = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+    for (const m of r1.body.matches) {
+      if (m.blackId === null) continue;
+      await agent.post(`/api/matches/${m.id}/result`).send({ result: "white", forfeit: true });
+    }
+    expect((await agent.post(`/api/rounds/${r1.body.id}/complete`)).status).toBe(200);
+
+    const r2 = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+    expect(r2.status).toBe(201);
+    for (const m of r2.body.matches) {
+      if (m.blackId === null) continue;
+      expect(ratingOf.get(m.whiteId)!).toBeGreaterThan(ratingOf.get(m.blackId)!);
+    }
+  });
+
+  it("no le da el bye a quien ya ganó por incomparecencia (FIDE C.04.1.d)", async () => {
+    const agent = await organizer();
+    const t = await agent
+      .post("/api/tournaments")
+      .send({ name: "W.O. y bye", date: "2026-09-08", numRounds: 3 });
+    const tid = t.body.id as string;
+    const ids: Record<string, string> = {};
+    for (const [lastName, rating] of Object.entries({ A: 2000, B: 1900, C: 1800, D: 1700, E: 1600 })) {
+      const p = await agent.post(`/api/tournaments/${tid}/players`).send({ lastName, rating });
+      ids[lastName] = p.body.id;
+    }
+
+    // Ronda 1: bye para E (el de menor Elo). C gana por W.O., D gana normal.
+    const r1 = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+    expect(byeOf(r1)).toBe(ids.E);
+    await winsBy(agent, r1, ids.C, true);
+    await winsBy(agent, r1, ids.D);
+    await agent.post(`/api/rounds/${r1.body.id}/complete`);
+
+    // Ronda 2: el bye va a B, el de menor Elo del grupo de 0 puntos.
+    const r2 = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+    expect(byeOf(r2)).toBe(ids.B);
+    await winsBy(agent, r2, ids.D);
+    await winsBy(agent, r2, ids.A);
+    await agent.post(`/api/rounds/${r2.body.id}/complete`);
+
+    // Ronda 3: en el grupo de 1 punto, de menor a mayor Elo, E ya tuvo bye,
+    // C ya ganó por W.O. y B ya tuvo bye. El bye tiene que subir hasta A.
+    const r3 = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
+    expect(r3.status).toBe(201);
+    expect(byeOf(r3)).not.toBe(ids.C);
+    expect(byeOf(r3)).toBe(ids.A);
+  });
+});
+
 describe("bye manual", () => {
   it("saca al jugador elegido del emparejamiento de la ronda 1 y le da el bye", async () => {
     const agent = await organizer();

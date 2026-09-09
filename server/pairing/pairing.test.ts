@@ -7,7 +7,7 @@ import {
   type PairingPlayer,
   type SeedPlayer,
 } from "./pairing";
-import { colorBalance, trailingStreak } from "./colors";
+import { colorBalance, MAX_COLOR_DIFFERENCE, trailingStreak } from "./colors";
 
 const W: Color = "white";
 const B: Color = "black";
@@ -23,6 +23,7 @@ function player(
     colorHistory: [],
     opponents: new Set(),
     hadBye: false,
+    hadForfeitWin: false,
     rating: null,
     ...opts,
   };
@@ -528,6 +529,7 @@ describe("generatePairings — torneo completo", () => {
           colorHistory: p.colorHistory,
           opponents: p.opponents,
           hadBye: p.hadBye,
+          hadForfeitWin: false,
         })),
       );
 
@@ -564,7 +566,7 @@ describe("generatePairings — torneo completo", () => {
       // player can go out of balance in one round and be brought back by the
       // next, and a final-state check would quietly miss it.
       for (const p of players) {
-        if (Math.abs(colorBalance(p.colorHistory)) > 1) {
+        if (Math.abs(colorBalance(p.colorHistory)) > MAX_COLOR_DIFFERENCE) {
           colorBreaks.push(`R${round + 1} ${p.id} balance=${colorBalance(p.colorHistory)}`);
         }
         if (trailingStreak(p.colorHistory).length > 2) {
@@ -604,15 +606,13 @@ describe("generatePairings — torneo completo", () => {
   });
 });
 
-describe("generatePairings — posiciones imposibles", () => {
-  it("keeps the no-rematch rule and gives up the minimum of color balance", () => {
-    // Posición real encontrada simulando torneos de 8 jugadores: antes de la
-    // ronda 4, cuatro jugadores deben negras y cuatro deben blancas, pero los
-    // enfrentamientos ya jugados hacen imposible cruzarlos sin repetir una
-    // pareja. Enumerando los 105 emparejamientos posibles: 14 no repiten
-    // ninguna pareja, y el mejor de esos deja exactamente 2 conflictos de
-    // color. Existe una ronda con 0 conflictos, pero exige una revancha.
-    // La regla de no repetir manda, así que 2 es el óptimo demostrable.
+describe("generatePairings — posiciones apretadas", () => {
+  it("pairs the position that the stricter +/-1 rule made impossible", () => {
+    // Posición real encontrada simulando torneos de 8 jugadores. Con el límite
+    // de color en +/-1 no tenía solución: de los 105 emparejamientos posibles
+    // solo 14 evitan la revancha, y ninguno de esos 14 respetaba el +/-1, así
+    // que había que romper el color de dos jugadores. Con el límite de FIDE
+    // (+/-2, C.04.1.f) los 14 son legales y la ronda sale limpia.
     const players = [
       player("p1", 0, { rating: 2200, colorHistory: [W, B, W], opponents: new Set(["p5", "p7", "p6"]) }),
       player("p2", 2, { rating: 2163, colorHistory: [W, B, W], opponents: new Set(["p6", "p5", "p3"]) }),
@@ -633,12 +633,52 @@ describe("generatePairings — posiciones imposibles", () => {
     }
 
     let outOfBalance = 0;
+    let tripleColor = 0;
     for (const pair of pairs) {
       for (const [id, color] of [[pair.white, W] as const, [pair.black, B] as const]) {
         const history = [...byId.get(id)!.colorHistory, color];
-        if (Math.abs(colorBalance(history)) > 1) outOfBalance++;
+        if (Math.abs(colorBalance(history)) > MAX_COLOR_DIFFERENCE) outOfBalance++;
+        if (trailingStreak(history).length > 2) tripleColor++;
       }
     }
-    expect(outOfBalance).toBe(2);
+    expect(outOfBalance).toBe(0);
+    expect(tripleColor).toBe(0);
+  });
+});
+
+describe("generatePairings — bye y walkover (FIDE C.04.1.d)", () => {
+  it("does not give the bye to a player who already won by forfeit", () => {
+    // Un W.O. ya le dio un punto sin jugar; el bye le daría un segundo.
+    const players = [
+      player("a", 1, { rating: 2000 }),
+      player("b", 1, { rating: 1900 }),
+      player("c", 1, { rating: 1800 }),
+      player("walkover", 0, { rating: 800, hadForfeitWin: true }),
+      player("next", 0, { rating: 900 }),
+    ];
+    expect(generatePairings(players).bye).toBe("next");
+  });
+
+  it("skips both a previous bye and a previous forfeit win", () => {
+    const players = [
+      player("a", 1, { rating: 2000 }),
+      player("b", 1, { rating: 1900 }),
+      player("c", 1, { rating: 1500 }),
+      player("hadBye", 0, { rating: 700, hadBye: true }),
+      player("walkover", 0, { rating: 800, hadForfeitWin: true }),
+    ];
+    // Los dos del grupo de 0 están vetados, así que sube al grupo de 1.
+    expect(generatePairings(players).bye).toBe("c");
+  });
+
+  it("still gives the bye when every remaining player is ineligible", () => {
+    const players = [
+      player("a", 1, { rating: 2000, hadForfeitWin: true }),
+      player("b", 1, { rating: 1900, hadBye: true }),
+      player("c", 0, { rating: 800, hadForfeitWin: true }),
+    ];
+    const { bye, pairs } = generatePairings(players);
+    expect(bye).toBe("c");
+    expect(pairs).toHaveLength(1);
   });
 });

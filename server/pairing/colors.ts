@@ -1,23 +1,37 @@
 export type Color = "white" | "black";
 
 /**
- * Strict constraint: a player may never end a round with more games of one
- * color than the other plus one. 3W/2B is fine, 4W/1B is not.
+ * FIDE C.04.1.f: for each player the difference between games played with
+ * white and with black must stay within [-2, +2]. 4W/2B is fine, 5W/2B is not.
  */
-export const MAX_COLOR_DIFFERENCE = 1;
+export const MAX_COLOR_DIFFERENCE = 2;
 
-/** Strict constraint: a player may never play the same color three rounds running. */
+/** FIDE C.04.1.g: no player receives the same color three rounds running. */
 export const MAX_SAME_COLOR_STREAK = 2;
 
-export type PreferenceStrength = "absolute" | "mild" | "none";
+/**
+ * FIDE C.04.3 grades how badly a player wants a color:
+ *
+ * - "absolute" — the other color would break C.04.1.f or C.04.1.g. Must be
+ *   granted; two players with conflicting absolute preferences cannot be
+ *   paired at all.
+ * - "strong" — the color difference is +1 or -1, so the player is due the
+ *   color that equalizes it.
+ * - "mild" — colors are balanced; the player is due the one that alternates
+ *   from their last game.
+ */
+export type PreferenceStrength = "absolute" | "strong" | "mild" | "none";
+
+const STRENGTH_RANK: Record<PreferenceStrength, number> = {
+  absolute: 3,
+  strong: 2,
+  mild: 1,
+  none: 0,
+};
 
 export interface ColorPreference {
   /** The color the player is due, or null when either is equally fine. */
   due: Color | null;
-  /**
-   * "absolute" — the other color would break one of the strict constraints.
-   * "mild" — plain alternation; can be given up to resolve a conflict.
-   */
   strength: PreferenceStrength;
 }
 
@@ -25,7 +39,11 @@ export interface ColorPreference {
 export interface ColorCandidate {
   id: string;
   rating: number | null;
-  /** Colors already played, oldest first. Byes are not colors and are not listed. */
+  /**
+   * Colors of the games this player actually played, oldest first. Byes and
+   * forfeited games are not colors and must not appear here — FIDE counts the
+   * color difference and the color sequence over played games only.
+   */
   colorHistory: readonly Color[];
 }
 
@@ -50,8 +68,8 @@ export function trailingStreak(history: readonly Color[]): { color: Color | null
 }
 
 /**
- * Whether handing `color` to this player would break either strict constraint:
- * the running balance leaving [-1, 1], or a third game in a row with the same
+ * Whether handing `color` to this player would break either hard rule: the
+ * running difference leaving [-2, +2], or a third game in a row with the same
  * color.
  */
 export function violatesColorRules(history: readonly Color[], color: Color): boolean {
@@ -73,12 +91,15 @@ export function colorPreference(history: readonly Color[]): ColorPreference {
     if (balance === 0) return { due: null, strength: "none" };
     return { due: balance > 0 ? "black" : "white", strength: "absolute" };
   }
+
+  const balance = colorBalance(history);
+  if (balance !== 0) return { due: balance > 0 ? "black" : "white", strength: "strong" };
   const last = history[history.length - 1];
   if (last === undefined) return { due: null, strength: "none" };
   return { due: opposite(last), strength: "mild" };
 }
 
-/** True when the pair admits an assignment that breaks no strict constraint. */
+/** True when the pair admits an assignment that breaks no hard rule. */
 export function colorsCompatible(a: ColorCandidate, b: ColorCandidate): boolean {
   return (
     (!violatesColorRules(a.colorHistory, "white") && !violatesColorRules(b.colorHistory, "black")) ||
@@ -94,6 +115,34 @@ function outranks(a: ColorCandidate, b: ColorCandidate): boolean {
   return a.id < b.id;
 }
 
+/**
+ * Which of the two players loses the argument when both are due the same
+ * color, or null when nobody has to give anything up. FIDE C.04.3: the
+ * stronger preference is granted, and between equal strengths the
+ * higher-ranked player wins.
+ */
+function loser(a: ColorCandidate, b: ColorCandidate): ColorCandidate | null {
+  const prefA = colorPreference(a.colorHistory);
+  const prefB = colorPreference(b.colorHistory);
+  if (!prefA.due || !prefB.due || prefA.due !== prefB.due) return null;
+  const rankA = STRENGTH_RANK[prefA.strength];
+  const rankB = STRENGTH_RANK[prefB.strength];
+  if (rankA !== rankB) return rankA > rankB ? b : a;
+  return outranks(a, b) ? b : a;
+}
+
+/**
+ * The strength of the color preference that has to be denied to play this
+ * pair, or null when both players can be given the color they are due. The
+ * pairing weights use it so that, with the looser +/-2 limit, a pairing that
+ * satisfies everyone still beats one that does not.
+ */
+export function deniedPreference(a: ColorCandidate, b: ColorCandidate): PreferenceStrength | null {
+  const denied = loser(a, b);
+  if (!denied) return null;
+  return colorPreference(denied.colorHistory).strength;
+}
+
 function give(player: ColorCandidate, color: Color, other: ColorCandidate) {
   return color === "white"
     ? { white: player.id, black: other.id }
@@ -102,9 +151,9 @@ function give(player: ColorCandidate, color: Color, other: ColorCandidate) {
 
 /**
  * Decide who plays white. Any assignment that keeps both players inside the
- * strict constraints wins outright; when both (or, under relaxation, neither)
- * are legal, preferences decide, and a head-on conflict goes to the
- * higher-rated player.
+ * hard rules wins outright; when both (or, under relaxation, neither) are
+ * legal, FIDE C.04.3 decides: grant both preferences if they differ, else
+ * grant the stronger one, and break a tie in favor of the higher-rated player.
  */
 export function assignColors(
   a: ColorCandidate,
@@ -119,12 +168,15 @@ export function assignColors(
 
   const prefA = colorPreference(a.colorHistory);
   const prefB = colorPreference(b.colorHistory);
-  if (prefA.due && !prefB.due) return give(a, prefA.due, b);
-  if (prefB.due && !prefA.due) return give(b, prefB.due, a);
   if (prefA.due && prefB.due) {
+    // Different colors due: both get what they want.
     if (prefA.due !== prefB.due) return give(a, prefA.due, b);
-    return outranks(a, b) ? give(a, prefA.due, b) : give(b, prefB.due, a);
+    const denied = loser(a, b)!;
+    const winner = denied === a ? b : a;
+    return give(winner, colorPreference(winner.colorHistory).due!, denied);
   }
+  if (prefA.due) return give(a, prefA.due, b);
+  if (prefB.due) return give(b, prefB.due, a);
   // No history on either side (round 1 is handled separately): top seed takes white.
   return outranks(a, b) ? { white: a.id, black: b.id } : { white: b.id, black: a.id };
 }

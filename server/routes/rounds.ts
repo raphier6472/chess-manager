@@ -121,12 +121,17 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
   } else {
     const matches = db
       .prepare(
-        `SELECT m.white_id, m.black_id, m.result
+        `SELECT m.white_id, m.black_id, m.result, m.forfeit
          FROM matches m JOIN rounds r ON r.id = m.round_id
          WHERE r.tournament_id = ?
          ORDER BY r.number`,
       )
-      .all(tournamentId) as Array<{ white_id: string; black_id: string | null; result: string }>;
+      .all(tournamentId) as Array<{
+      white_id: string;
+      black_id: string | null;
+      result: string;
+      forfeit: number;
+    }>;
 
     const scoreOf = new Map<string, number>();
     const opponentsOf = new Map<string, Set<string>>();
@@ -135,11 +140,13 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
     // anyone from playing the same color three rounds running.
     const colorHistoryOf = new Map<string, Color[]>();
     const hadByeOf = new Map<string, boolean>();
+    const hadForfeitWinOf = new Map<string, boolean>();
     for (const p of players) {
       scoreOf.set(p.id, 0);
       opponentsOf.set(p.id, new Set());
       colorHistoryOf.set(p.id, []);
       hadByeOf.set(p.id, false);
+      hadForfeitWinOf.set(p.id, false);
     }
     const addScore = (id: string, pts: number) => {
       if (scoreOf.has(id)) scoreOf.set(id, scoreOf.get(id)! + pts);
@@ -151,14 +158,23 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
         addScore(m.white_id, 1);
         continue;
       }
+      // Being paired counts even when the game was not played, so the two
+      // never meet again...
       opponentsOf.get(m.white_id)?.add(m.black_id);
       opponentsOf.get(m.black_id)?.add(m.white_id);
-      colorHistoryOf.get(m.white_id)?.push("white");
-      colorHistoryOf.get(m.black_id)?.push("black");
+      // ...but a forfeited game is not a game of chess: FIDE counts the color
+      // difference and the color sequence over played games only, so a W.O.
+      // must not leave a color behind.
+      if (m.forfeit !== 1) {
+        colorHistoryOf.get(m.white_id)?.push("white");
+        colorHistoryOf.get(m.black_id)?.push("black");
+      }
       if (m.result === "white") {
         addScore(m.white_id, 1);
+        if (m.forfeit === 1) hadForfeitWinOf.set(m.white_id, true);
       } else if (m.result === "black") {
         addScore(m.black_id, 1);
+        if (m.forfeit === 1) hadForfeitWinOf.set(m.black_id, true);
       } else if (m.result === "draw") {
         addScore(m.white_id, 0.5);
         addScore(m.black_id, 0.5);
@@ -173,6 +189,7 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
         colorHistory: colorHistoryOf.get(p.id) ?? [],
         opponents: opponentsOf.get(p.id) ?? new Set(),
         hadBye: hadByeOf.get(p.id) ?? false,
+        hadForfeitWin: hadForfeitWinOf.get(p.id) ?? false,
         rating: p.rating,
       }));
 

@@ -103,35 +103,55 @@ Elo del grupo puntero siempre juega en la mesa 1.
 
 #### Colores
 
-- Se alterna el color de una ronda a la otra siempre que se pueda.
-- **Nunca** se juega el mismo color tres rondas seguidas.
-- La diferencia entre partidas con blancas y con negras **nunca pasa de 1**: 3B/2N es
-  válido, 4B/1N no.
-- Si a los dos jugadores de una mesa les toca el mismo color, se lo queda el de **mayor
-  Elo** y el otro cede.
+Reglas duras, las de FIDE:
+
+- La diferencia entre partidas con blancas y con negras **nunca pasa de 2**
+  (C.04.1.f): 4B/2N es válido, 5B/2N no.
+- **Nunca** se juega el mismo color tres rondas seguidas (C.04.1.g).
+
+Dentro de eso, cada jugador tiene una preferencia de color con tres intensidades
+(C.04.3), y se concede la más fuerte de las dos que hay en la mesa:
+
+| Intensidad | Cuándo | Qué prefiere |
+|---|---|---|
+| **absoluta** | el otro color rompería una regla dura | el único color legal |
+| **fuerte** | la diferencia es +1 o −1 | el color que la empareja |
+| **suave** | los colores están equilibrados | alternar respecto de la ronda anterior |
+
+Si los dos tienen la **misma** intensidad y quieren el mismo color, se lo queda el de
+**mayor Elo**. El emparejamiento además prefiere las mesas donde nadie tiene que ceder,
+así que en la práctica la mayoría de los jugadores se queda en una diferencia de 1 o 0
+aunque el reglamento permita llegar a 2.
+
+#### Partidas no jugadas (W.O.)
+
+- Una partida perdida por incomparecencia **no deja color**: FIDE cuenta la diferencia y
+  la secuencia de colores solo sobre las partidas realmente jugadas.
+- Los dos jugadores **sí** quedan como ya enfrentados: la mesa existió, así que no se
+  vuelven a cruzar.
 
 #### Bye
 
-- Lo recibe el jugador de **menor Elo del grupo de puntaje más bajo**.
-- Un jugador **nunca** recibe dos byes en el mismo torneo: si al de menor Elo ya le tocó,
-  pasa al siguiente elegible, subiendo de grupo si hace falta.
+- Lo recibe el jugador de **menor Elo del grupo de puntaje más bajo**, y vale 1 punto
+  (C.04.1.c).
+- Queda excluido quien **ya tuvo un bye** o **ya ganó una partida por incomparecencia**
+  (C.04.1.d): en los dos casos ya se llevó un punto sin jugar. Se pasa al siguiente
+  elegible, subiendo de grupo si hace falta.
 
 #### Cuando las reglas no se pueden cumplir todas
 
-Con pocos jugadores y muchas rondas llega un punto en que ninguna ronda cumple todo a la
-vez — por ejemplo, ocho jugadores en los que los cuatro que deben negras ya se enfrentaron
-con todos los que deben blancas. En esos casos las reglas se ceden **de a una y en este
-orden**, y solo después de comprobar que no existe ninguna ronda que las respete:
+Con pocos jugadores y muchas rondas puede llegar un punto en que ninguna ronda cumpla
+todo a la vez. En ese caso las reglas se ceden **de a una y en este orden**, y solo
+después de comprobar que no existe ninguna ronda que las respete:
 
 1. Se cambia a otro jugador elegible para el bye.
-2. Se cede el equilibrio de colores, para los menos jugadores posibles.
+2. Se cede el color, para los menos jugadores posibles.
 3. Se repite un emparejamiento ya jugado.
 4. Solo si todo lo anterior falla, se da un segundo bye.
 
-En simulaciones de 840 torneos con formas realistas (de 8 a 80 jugadores, de 4 a 9 rondas)
-no aparece **ninguna** revancha ni ningún bye repetido; el equilibrio de colores solo se
-cede en torneos de 8 jugadores que llegan a la ronda 4, donde está demostrado que no existe
-alternativa.
+En simulaciones de 780 torneos con formas realistas (de 8 a 60 jugadores, de 4 a 9 rondas)
+**no hace falta ceder nada en ninguno**: cero revanchas, cero byes repetidos y cero
+infracciones de color.
 
 ### Desempates
 
@@ -360,8 +380,13 @@ trabajo, el estilo de código y qué se espera de un *pull request*.
 Áreas donde una mejora rinde especialmente:
 
 - **Reglas FIDE de emparejamiento.** Ya hay grupos de puntaje exactos, plegado por Elo,
-  flotantes y restricciones de color estrictas, pero no es el sistema holandés completo:
-  faltan, entre otras, las reglas de flotante repetido entre rondas consecutivas.
+  flotantes, las reglas de color de C.04.1.f/g con las tres intensidades de C.04.3 y las
+  de bye de C.04.1.c/d, pero no es el sistema holandés completo. Falta sobre todo
+  **minimizar los flotantes repetidos**: hoy no se guarda quién bajó de grupo en la ronda
+  anterior, y en simulaciones un 26 % de los flotantes le toca a alguien que ya había
+  bajado la ronda previa. También queda pendiente que el desempate entre jugadores del
+  mismo Elo use apellido y nombre (como ya hace la ronda 1) en vez del identificador
+  interno.
 - **Más desempates.** Progresivo acumulativo, Koya, cantidad de partidas con negras.
 - **Exportar e imprimir.** Publicar planillas de emparejamientos y posiciones en PDF.
 - **Traducciones.** La interfaz está en español y los textos hoy están dentro de los
