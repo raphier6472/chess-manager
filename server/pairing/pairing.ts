@@ -5,6 +5,14 @@ export type { Color };
 
 export interface PairingPlayer {
   id: string;
+  /**
+   * Surname and given name. FIDE C.04.1.i wants a pairing an arbiter can
+   * explain, so two players on the same rating are separated the same way the
+   * round-1 seeding separates them — alphabetically — rather than by whatever
+   * internal id they happen to carry.
+   */
+  lastName: string;
+  firstName: string;
   score: number;
   /** Colors already played, oldest first. Byes are not colors and are not listed. */
   colorHistory: readonly Color[];
@@ -16,6 +24,12 @@ export interface PairingPlayer {
    * previous bye does: both already handed them a point without a game.
    */
   hadForfeitWin: boolean;
+  /**
+   * Whether this player was moved down to a lower score group in the previous
+   * round. FIDE asks that the same player not be made to float down twice
+   * running when there is any alternative.
+   */
+  downfloatedLastRound: boolean;
   rating: number | null;
 }
 
@@ -180,22 +194,40 @@ function scoreKey(player: PairingPlayer): number {
   return Math.round(player.score * 2);
 }
 
-/** Standings order: score desc, then rating desc (unrated last), then id. */
+/**
+ * Separates two players of equal rating, in the same order the round-1
+ * seeding uses: surname, then given name, and only then the internal id as a
+ * last resort so the result is always deterministic.
+ */
+function compareByName(a: PairingPlayer, b: PairingPlayer): number {
+  const lastNames = a.lastName.localeCompare(b.lastName, "es");
+  if (lastNames !== 0) return lastNames;
+  const firstNames = a.firstName.localeCompare(b.firstName, "es");
+  if (firstNames !== 0) return firstNames;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** Standings order: score desc, then rating desc (unrated last), then name. */
 function byStandings(a: PairingPlayer, b: PairingPlayer): number {
   if (a.score !== b.score) return b.score - a.score;
   const ratingA = ratingKey(a);
   const ratingB = ratingKey(b);
   if (ratingA !== ratingB) return ratingB - ratingA;
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  return compareByName(a, b);
 }
 
-/** Bye order: lowest score group first, lowest rating inside it, then id. */
+/**
+ * Bye order: lowest score group first, lowest rating inside it, and then the
+ * player the seeding ranks *last* — the ranking runs alphabetically, so among
+ * equally-rated players the bye falls on the one furthest down the list, the
+ * same player round-1 seeding would have given it to.
+ */
 function byByePreference(a: PairingPlayer, b: PairingPlayer): number {
   if (a.score !== b.score) return a.score - b.score;
   const ratingA = ratingKey(a);
   const ratingB = ratingKey(b);
   if (ratingA !== ratingB) return ratingA - ratingB;
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  return compareByName(b, a);
 }
 
 /**
@@ -221,12 +253,20 @@ function byeCandidates(players: PairingPlayer[]): {
 }
 
 /**
- * Subsets of `bracket` (as indices) that could float down, best first. Rule:
- * the lowest-rated players float, so subsets taken from the bottom of the
- * bracket come first; the rest are only reached when the preferred float
- * leaves the bracket unpairable.
+ * Subsets of `bracket` (as indices) that could float down, best first.
+ *
+ * Two preferences, in order. First, avoid making somebody float down twice in
+ * a row: FIDE treats a repeated downfloat as a quality defect, since the same
+ * player keeps being pushed away from their own score group. Second, among
+ * subsets that are equal on that count, the lowest-rated players float, which
+ * is the default shape of the system.
+ *
+ * Both are only preferences on the order the search tries things in, never
+ * constraints: a subset that leaves the bracket unpairable is skipped, so
+ * these can never cost a legal pairing.
  */
-function floatChoices(bracketSize: number, count: number): number[][] {
+function floatChoices(bracket: PairingPlayer[], count: number): number[][] {
+  const bracketSize = bracket.length;
   if (count <= 0) return [[]];
   if (count >= bracketSize) return [Array.from({ length: bracketSize }, (_, i) => i)];
   const combos: number[][] = [];
@@ -246,7 +286,15 @@ function floatChoices(bracketSize: number, count: number): number[][] {
     }
   };
   pick(bracketSize - 1);
-  return combos;
+
+  // Stable sort keeps the bottom-most-first order within each group, so the
+  // rating preference still decides among equally good choices.
+  const repeats = (combo: number[]) =>
+    combo.reduce((n, i) => n + (bracket[i].downfloatedLastRound ? 1 : 0), 0);
+  return combos
+    .map((combo, order) => ({ combo, order, repeats: repeats(combo) }))
+    .sort((x, y) => x.repeats - y.repeats || x.order - y.order)
+    .map((entry) => entry.combo);
 }
 
 /**
@@ -349,7 +397,7 @@ function searchBrackets(
   const residentScore = scoreKey(groups[index][0]);
 
   for (let down = parity; down <= maxDown; down += 2) {
-    for (const downIndices of floatChoices(bracket.length, down)) {
+    for (const downIndices of floatChoices(bracket, down)) {
       if (budget.attempts >= MAX_SEARCH_ATTEMPTS) return null;
       budget.attempts++;
       const downSet = new Set(downIndices);
@@ -392,6 +440,13 @@ function pairField(
 const GLOBAL_SCORE_STEP = 10_000;
 
 /**
+ * Charged when the whole-field fallback makes somebody float down for the
+ * second round running. Below one step of score distance, so keeping players
+ * near their own score group still comes first.
+ */
+const REPEAT_FLOAT_PENALTY = 2_000;
+
+/**
  * Whole-field fallback: one maximum-weight matching over every player at
  * once, with exactly the same edges the bracket walk was allowed to use.
  *
@@ -430,6 +485,12 @@ function matchWholeField(field: PairingPlayer[], relax: Relaxation): PairingPair
       const idealSpan = sameGroup ? (groupHalf.get(scoreKey(a)) ?? 1) : 1;
       let weight =
         FOLD_BASE - scoreGap * GLOBAL_SCORE_STEP - Math.abs(j - i - idealSpan) * FOLD_STEP;
+      // Across score groups the higher-scoring player is the one floating
+      // down; charge for it if they already floated last round.
+      if (!sameGroup) {
+        const downfloater = scoreKey(a) > scoreKey(b) ? a : b;
+        if (downfloater.downfloatedLastRound) weight -= REPEAT_FLOAT_PENALTY;
+      }
       if (rematch) weight -= REMATCH_PENALTY;
       if (colorOk) weight -= preferencePenalty(a, b);
       else weight -= COLOR_VIOLATION_PENALTY;

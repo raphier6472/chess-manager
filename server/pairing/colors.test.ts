@@ -14,7 +14,8 @@ const W: Color = "white";
 const B: Color = "black";
 
 function candidate(id: string, rating: number | null, colorHistory: Color[]) {
-  return { id, rating, colorHistory };
+  // The surname doubles as the id so equal-rating ties stay deterministic.
+  return { id, lastName: id, firstName: "", rating, colorHistory };
 }
 
 describe("colorBalance", () => {

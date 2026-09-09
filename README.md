@@ -73,7 +73,10 @@ jugadores. Todo lo que modifica datos exige haber iniciado sesión como organiza
 Es el método estándar (Harkness), el mismo que usan Swiss Manager y Vega:
 
 1. Se ordenan los jugadores activos por Elo descendente. Los que no tienen Elo van al
-   final. Los empates se resuelven alfabéticamente por **apellido** y luego por nombre.
+   final. Los empates se resuelven alfabéticamente por **apellido** y luego por nombre —
+   el mismo criterio se usa en todas las rondas siguientes, así que dos jugadores del mismo
+   Elo siempre quedan ordenados de una forma que se le puede explicar a cualquiera
+   (C.04.1.i).
 2. La lista se parte por la mitad. El jugador *i* de la mitad superior se empareja con el
    jugador *i* de la mitad inferior: 1 contra n/2+1, 2 contra n/2+2, y así sucesivamente.
 3. El color de la **mesa 1 se sortea** y a partir de ahí **alterna por mesa**: si en la
@@ -91,7 +94,9 @@ los grupos se recorren de arriba hacia abajo:
    abajo.
 2. Si el grupo tiene un número impar de jugadores, el de **menor Elo baja** ("flota") al
    grupo siguiente y juega contra el de **mayor Elo** que quede libre ahí. Eso puede dejar
-   impar al grupo de abajo y encadenar otro flotante, y así sucesivamente.
+   impar al grupo de abajo y encadenar otro flotante, y así sucesivamente. Si a ese jugador
+   ya le tocó bajar en la ronda anterior, baja otro en su lugar: FIDE pide no empujar dos
+   veces seguidas al mismo fuera de su grupo. Solo repite si no hay alternativa.
 3. Dentro de cada grupo, la combinación concreta la resuelve un **emparejamiento de peso
    máximo** con el algoritmo de Blossom (`server/pairing/blossom.ts`), la misma técnica que
    usa [Coronate](https://github.com/johnridesabike/coronate): entre todas las
@@ -380,13 +385,11 @@ trabajo, el estilo de código y qué se espera de un *pull request*.
 Áreas donde una mejora rinde especialmente:
 
 - **Reglas FIDE de emparejamiento.** Ya hay grupos de puntaje exactos, plegado por Elo,
-  flotantes, las reglas de color de C.04.1.f/g con las tres intensidades de C.04.3 y las
-  de bye de C.04.1.c/d, pero no es el sistema holandés completo. Falta sobre todo
-  **minimizar los flotantes repetidos**: hoy no se guarda quién bajó de grupo en la ronda
-  anterior, y en simulaciones un 26 % de los flotantes le toca a alguien que ya había
-  bajado la ronda previa. También queda pendiente que el desempate entre jugadores del
-  mismo Elo use apellido y nombre (como ya hace la ronda 1) en vez del identificador
-  interno.
+  flotantes (sin repetir al mismo jugador dos rondas seguidas), las reglas de color de
+  C.04.1.f/g con las tres intensidades de C.04.3, las de bye de C.04.1.c/d y el orden
+  alfabético como desempate en todas las rondas. Todavía no es el sistema holandés
+  completo: falta, entre otras cosas, tener en cuenta los flotantes **hacia arriba** y el
+  historial de más de una ronda atrás, y no hay aceleración.
 - **Más desempates.** Progresivo acumulativo, Koya, cantidad de partidas con negras.
 - **Exportar e imprimir.** Publicar planillas de emparejamientos y posiciones en PDF.
 - **Traducciones.** La interfaz está en español y los textos hoy están dentro de los
