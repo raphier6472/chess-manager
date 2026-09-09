@@ -2,7 +2,13 @@ import { Router } from "express";
 import { nanoid } from "nanoid";
 import { db } from "../db";
 import type { Match, Round } from "../../shared/types";
-import { generateInitialPairings, generatePairings, type PairingPair, type PairingPlayer } from "../pairing/pairing";
+import {
+  generateInitialPairings,
+  generatePairings,
+  type Color,
+  type PairingPair,
+  type PairingPlayer,
+} from "../pairing/pairing";
 import { requireAuth } from "../middleware/auth";
 
 const router = Router();
@@ -117,18 +123,22 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
       .prepare(
         `SELECT m.white_id, m.black_id, m.result
          FROM matches m JOIN rounds r ON r.id = m.round_id
-         WHERE r.tournament_id = ?`,
+         WHERE r.tournament_id = ?
+         ORDER BY r.number`,
       )
       .all(tournamentId) as Array<{ white_id: string; black_id: string | null; result: string }>;
 
     const scoreOf = new Map<string, number>();
     const opponentsOf = new Map<string, Set<string>>();
-    const colorBalanceOf = new Map<string, number>();
+    // Color history is ordered oldest-first (the query sorts by round number):
+    // the pairing engine needs the sequence, not just the net balance, to keep
+    // anyone from playing the same color three rounds running.
+    const colorHistoryOf = new Map<string, Color[]>();
     const hadByeOf = new Map<string, boolean>();
     for (const p of players) {
       scoreOf.set(p.id, 0);
       opponentsOf.set(p.id, new Set());
-      colorBalanceOf.set(p.id, 0);
+      colorHistoryOf.set(p.id, []);
       hadByeOf.set(p.id, false);
     }
     const addScore = (id: string, pts: number) => {
@@ -143,12 +153,8 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
       }
       opponentsOf.get(m.white_id)?.add(m.black_id);
       opponentsOf.get(m.black_id)?.add(m.white_id);
-      if (colorBalanceOf.has(m.white_id)) {
-        colorBalanceOf.set(m.white_id, colorBalanceOf.get(m.white_id)! + 1);
-      }
-      if (colorBalanceOf.has(m.black_id)) {
-        colorBalanceOf.set(m.black_id, colorBalanceOf.get(m.black_id)! - 1);
-      }
+      colorHistoryOf.get(m.white_id)?.push("white");
+      colorHistoryOf.get(m.black_id)?.push("black");
       if (m.result === "white") {
         addScore(m.white_id, 1);
       } else if (m.result === "black") {
@@ -164,7 +170,7 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
       .map((p) => ({
         id: p.id,
         score: scoreOf.get(p.id) ?? 0,
-        colorBalance: colorBalanceOf.get(p.id) ?? 0,
+        colorHistory: colorHistoryOf.get(p.id) ?? [],
         opponents: opponentsOf.get(p.id) ?? new Set(),
         hadBye: hadByeOf.get(p.id) ?? false,
         rating: p.rating,

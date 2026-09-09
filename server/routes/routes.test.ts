@@ -153,12 +153,15 @@ describe("resultados de una ronda cerrada", () => {
     expect(round.status).toBe(201);
     const matchId = round.body.matches[0].id as string;
     const roundId = round.body.id as string;
+    // El color de la ronda 1 se sortea, así que el ganador se identifica por
+    // el lado del tablero, no por el nombre del jugador.
+    const whiteId = round.body.matches[0].whiteId as string;
 
     expect((await agent.post(`/api/matches/${matchId}/result`).send({ result: "white" })).status).toBe(200);
     expect((await agent.post(`/api/rounds/${roundId}/complete`)).status).toBe(200);
 
     const before = await request(app).get(`/api/tournaments/${tournamentId}/standings`);
-    expect(before.body[0].name).toBe("Alfa");
+    expect(before.body[0].playerId).toBe(whiteId);
     expect(before.body[0].score).toBe(1);
 
     // El fallo original: esto devolvía 200 y daba vuelta el podio de un torneo terminado.
@@ -166,7 +169,7 @@ describe("resultados de una ronda cerrada", () => {
     expect(flip.status).toBe(409);
 
     const after = await request(app).get(`/api/tournaments/${tournamentId}/standings`);
-    expect(after.body[0].name).toBe("Alfa");
+    expect(after.body[0].playerId).toBe(whiteId);
     expect(after.body[0].score).toBe(1);
   });
 
@@ -191,6 +194,8 @@ describe("reabrir ronda", () => {
     const rnd = await agent.post(`/api/tournaments/${tid}/rounds/generate`);
     const roundId = rnd.body.id as string;
     const matchId = rnd.body.matches[0].id as string;
+    // El color de la ronda 1 se sortea: el ganador final es quien juega negras.
+    const blackId = rnd.body.matches[0].blackId as string;
 
     await agent.post(`/api/matches/${matchId}/result`).send({ result: "white" });
     await agent.post(`/api/rounds/${roundId}/complete`);
@@ -208,7 +213,7 @@ describe("reabrir ronda", () => {
 
     const standings = await request(app).get(`/api/tournaments/${tid}/standings`);
     expect(standings.body[0].score).toBe(1);
-    expect(standings.body[0].name).toBe("Beta");
+    expect(standings.body[0].playerId).toBe(blackId);
   });
 
   it("no deja reabrir una ronda si ya se emparejó la siguiente", async () => {
@@ -441,15 +446,26 @@ describe("orden de mesas por Elo", () => {
 
     const r1 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
     expect(r1.status).toBe(201);
-    // Fold seeding: mesa1 A-E, mesa2 F-B, mesa3 C-G, mesa4 H-D (ver generateInitialPairings).
-    const byPlayers = (white: string, black: string) =>
-      r1.body.matches.find((m: { whiteId: string; blackId: string }) => m.whiteId === white && m.blackId === black);
+    // Fold seeding: las mesas son A-E, B-F, C-G, D-H (ver generateInitialPairings).
+    // Qué lado juega blancas se sortea, así que el ganador se pide por jugador.
+    const winsAgainst = async (winner: string, loser: string) => {
+      const match = r1.body.matches.find(
+        (m: { whiteId: string; blackId: string }) =>
+          (m.whiteId === winner && m.blackId === loser) ||
+          (m.whiteId === loser && m.blackId === winner),
+      );
+      expect(match).toBeDefined();
+      const res = await agent
+        .post(`/api/matches/${match.id}/result`)
+        .send({ result: match.whiteId === winner ? "white" : "black" });
+      expect(res.status).toBe(200);
+    };
 
-    // Ganan A (favorito), B (favorito, es negras acá), G (sorpresa) y H (sorpresa).
-    await agent.post(`/api/matches/${byPlayers(ids.A, ids.E).id}/result`).send({ result: "white" });
-    await agent.post(`/api/matches/${byPlayers(ids.F, ids.B).id}/result`).send({ result: "black" });
-    await agent.post(`/api/matches/${byPlayers(ids.C, ids.G).id}/result`).send({ result: "black" });
-    await agent.post(`/api/matches/${byPlayers(ids.H, ids.D).id}/result`).send({ result: "white" });
+    // Ganan A y B (favoritos) y G y H (sorpresas de abajo).
+    await winsAgainst(ids.A, ids.E);
+    await winsAgainst(ids.B, ids.F);
+    await winsAgainst(ids.G, ids.C);
+    await winsAgainst(ids.H, ids.D);
     await agent.post(`/api/rounds/${r1.body.id}/complete`);
 
     const r2 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);

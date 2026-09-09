@@ -76,25 +76,62 @@ Es el método estándar (Harkness), el mismo que usan Swiss Manager y Vega:
    final. Los empates se resuelven alfabéticamente por **apellido** y luego por nombre.
 2. La lista se parte por la mitad. El jugador *i* de la mitad superior se empareja con el
    jugador *i* de la mitad inferior: 1 contra n/2+1, 2 contra n/2+2, y así sucesivamente.
-3. El color **alterna por mesa**: en la mesa 1 el jugador de la mitad superior lleva las
-   blancas, en la mesa 2 las negras, en la mesa 3 blancas otra vez.
+3. El color de la **mesa 1 se sortea** y a partir de ahí **alterna por mesa**: si en la
+   mesa 1 el jugador de la mitad superior lleva blancas, en la mesa 2 lleva negras, en la
+   mesa 3 blancas otra vez. Por eso la ronda 1 no da siempre el mismo resultado.
 4. Si el número de jugadores es impar, el de menor clasificación recibe *bye* (1 punto).
 
-### Rondas siguientes: emparejamiento por peso máximo
+### Rondas siguientes: grupos de puntaje, plegado y flotantes
 
-A partir de la segunda ronda se resuelve como un problema de **emparejamiento de peso
-máximo** sobre un grafo completo, con el algoritmo de Blossom (`server/pairing/blossom.ts`),
-la misma técnica que usa [Coronate](https://github.com/johnridesabike/coronate). Los pesos
-de las aristas favorecen, en este orden:
+A partir de la segunda ronda los jugadores se reparten en **grupos de puntaje exactos** y
+los grupos se recorren de arriba hacia abajo:
 
-- Emparejar jugadores con puntaje igual o parecido.
-- Evitar revanchas: dos jugadores que ya se enfrentaron solo se vuelven a cruzar si no hay
-  ninguna alternativa que deje a todos emparejados.
-- Evitar que el mismo jugador reciba *bye* dos veces.
+1. Dentro del grupo se ordena por Elo descendente y se **pliega**: se parte el grupo en dos
+   mitades y el jugador *i* de la mitad de arriba juega contra el jugador *i* de la de
+   abajo.
+2. Si el grupo tiene un número impar de jugadores, el de **menor Elo baja** ("flota") al
+   grupo siguiente y juega contra el de **mayor Elo** que quede libre ahí. Eso puede dejar
+   impar al grupo de abajo y encadenar otro flotante, y así sucesivamente.
+3. Dentro de cada grupo, la combinación concreta la resuelve un **emparejamiento de peso
+   máximo** con el algoritmo de Blossom (`server/pairing/blossom.ts`), la misma técnica que
+   usa [Coronate](https://github.com/johnridesabike/coronate): entre todas las
+   combinaciones legales elige la que más se parece al plegado ideal. Si un grupo no tiene
+   ninguna combinación legal, el algoritmo **retrocede** y prueba bajar a otro jugador.
 
-El color de cada partida lo decide el balance acumulado: juega con blancas quien más las
-tenga pendientes. Las mesas se ordenan por puntaje descendente, así que la mesa 1 siempre
-es la de los punteros.
+Las mesas se ordenan por grupo de puntaje y, dentro del grupo, por Elo: el jugador de mayor
+Elo del grupo puntero siempre juega en la mesa 1.
+
+#### Colores
+
+- Se alterna el color de una ronda a la otra siempre que se pueda.
+- **Nunca** se juega el mismo color tres rondas seguidas.
+- La diferencia entre partidas con blancas y con negras **nunca pasa de 1**: 3B/2N es
+  válido, 4B/1N no.
+- Si a los dos jugadores de una mesa les toca el mismo color, se lo queda el de **mayor
+  Elo** y el otro cede.
+
+#### Bye
+
+- Lo recibe el jugador de **menor Elo del grupo de puntaje más bajo**.
+- Un jugador **nunca** recibe dos byes en el mismo torneo: si al de menor Elo ya le tocó,
+  pasa al siguiente elegible, subiendo de grupo si hace falta.
+
+#### Cuando las reglas no se pueden cumplir todas
+
+Con pocos jugadores y muchas rondas llega un punto en que ninguna ronda cumple todo a la
+vez — por ejemplo, ocho jugadores en los que los cuatro que deben negras ya se enfrentaron
+con todos los que deben blancas. En esos casos las reglas se ceden **de a una y en este
+orden**, y solo después de comprobar que no existe ninguna ronda que las respete:
+
+1. Se cambia a otro jugador elegible para el bye.
+2. Se cede el equilibrio de colores, para los menos jugadores posibles.
+3. Se repite un emparejamiento ya jugado.
+4. Solo si todo lo anterior falla, se da un segundo bye.
+
+En simulaciones de 840 torneos con formas realistas (de 8 a 80 jugadores, de 4 a 9 rondas)
+no aparece **ninguna** revancha ni ningún bye repetido; el equilibrio de colores solo se
+cede en torneos de 8 jugadores que llegan a la ronda 4, donde está demostrado que no existe
+alternativa.
 
 ### Desempates
 
@@ -232,7 +269,7 @@ server/
   db.ts             SQLite (better-sqlite3), esquema y migraciones al arrancar
   auth/             hash scrypt de contraseñas y sesiones en base
   middleware/       requireAuth y opciones de la cookie
-  pairing/          algoritmo suizo: siembra inicial y Blossom
+  pairing/          algoritmo suizo: siembra inicial, grupos de puntaje, colores y Blossom
   scoring/          puntajes y desempates
   routes/           endpoints REST y sus pruebas
 shared/types.ts     tipos compartidos entre servidor e interfaz
@@ -305,7 +342,9 @@ npm run build  # verificación de tipos y compilación
 
 Las pruebas cubren dos niveles:
 
-- **Unitarias** sobre la lógica pura: siembra inicial, Blossom y desempates.
+- **Unitarias** sobre la lógica pura: siembra inicial, reglas de color, grupos de puntaje,
+  flotantes, bye, Blossom y desempates. Incluyen torneos completos simulados con
+  resultados deterministas, que verifican las reglas después de **cada** ronda.
 - **De endpoints** (`server/routes/routes.test.ts`) con supertest sobre una base
   `:memory:`, sin tocar el disco. Verifican, entre otras cosas, que las escrituras exijan
   sesión, que no se pueda alterar una ronda ya cerrada y que el límite de intentos no se
@@ -320,8 +359,9 @@ trabajo, el estilo de código y qué se espera de un *pull request*.
 
 Áreas donde una mejora rinde especialmente:
 
-- **Reglas FIDE de emparejamiento.** El algoritmo cubre bien los casos habituales, pero no
-  implementa el sistema holandés completo (flotantes, restricciones de color más estrictas).
+- **Reglas FIDE de emparejamiento.** Ya hay grupos de puntaje exactos, plegado por Elo,
+  flotantes y restricciones de color estrictas, pero no es el sistema holandés completo:
+  faltan, entre otras, las reglas de flotante repetido entre rondas consecutivas.
 - **Más desempates.** Progresivo acumulativo, Koya, cantidad de partidas con negras.
 - **Exportar e imprimir.** Publicar planillas de emparejamientos y posiciones en PDF.
 - **Traducciones.** La interfaz está en español y los textos hoy están dentro de los
