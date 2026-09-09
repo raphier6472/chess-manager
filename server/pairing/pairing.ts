@@ -147,19 +147,45 @@ function preferencePenalty(a: PairingPlayer, b: PairingPlayer): number {
 
 /**
  * Constraints are dropped one at a time, hardest last, and only when the
- * whole field cannot be paired with them in place. Repeating a pairing is
- * treated as worse than bending the color rules, matching FIDE practice.
+ * whole field cannot be paired with them in place.
+ *
+ * `maxBracketSpan` is how many score groups apart two opponents may be: 1
+ * means a player who floats down lands in the very next group that exists,
+ * never past it. It is widened before any color rule is bent, because FIDE
+ * ranks keeping players near their own score above color preferences — and a
+ * player two brackets adrift is far more visible at the board than a colour
+ * they did not want. Repeating a pairing stays the very last thing to give.
  */
 interface Relaxation {
+  maxBracketSpan: number;
   rematch: boolean;
   colorViolation: boolean;
 }
 
-const RELAXATIONS: Relaxation[] = [
-  { rematch: false, colorViolation: false },
-  { rematch: false, colorViolation: true },
-  { rematch: true, colorViolation: true },
-];
+/**
+ * The ladder is built for the field at hand rather than fixed, so the span
+ * opens one score group at a time and the round is always paired at the
+ * smallest span that admits a solution.
+ *
+ * Every span is exhausted with the color rules intact before any of them is
+ * bent. In the Dutch system the color limits of C.04.1.f/g are *absolute*
+ * criteria while keeping players near their own score is a quality one, so
+ * dragging a player an extra bracket down is the correct price for keeping a
+ * color legal — not the other way round. Repeating a pairing stays last.
+ */
+function relaxationLadder(groupCount: number): Relaxation[] {
+  const widest = Math.max(1, groupCount - 1);
+  const ladder: Relaxation[] = [];
+  for (let span = 1; span <= widest; span++) {
+    ladder.push({ maxBracketSpan: span, rematch: false, colorViolation: false });
+  }
+  for (let span = 1; span <= widest; span++) {
+    ladder.push({ maxBracketSpan: span, rematch: false, colorViolation: true });
+  }
+  // Last resort: repeat a pairing rather than fail to produce a round.
+  ladder.push({ maxBracketSpan: Infinity, rematch: true, colorViolation: true });
+  return ladder;
+}
 
 /** How many combinations of down-floaters to try per bracket before giving up. */
 const MAX_FLOAT_COMBINATIONS = 200;
@@ -332,6 +358,7 @@ function matchBracket(
   bracket: PairingPlayer[],
   floaterCount: number,
   relax: Relaxation,
+  bracketIndexOf: ReadonlyMap<number, number>,
 ): PairingPair[] | null {
   const size = bracket.length;
   if (size === 0) return [];
@@ -343,6 +370,10 @@ function matchBracket(
     for (let j = i + 1; j < size; j++) {
       const a = bracket[i];
       const b = bracket[j];
+      const span = Math.abs(
+        (bracketIndexOf.get(scoreKey(a)) ?? 0) - (bracketIndexOf.get(scoreKey(b)) ?? 0),
+      );
+      if (span > relax.maxBracketSpan) continue;
       const rematch = a.opponents.has(b.id);
       if (rematch && !relax.rematch) continue;
       const colorOk = colorsCompatible(a, b);
@@ -386,6 +417,7 @@ function searchBrackets(
   floaters: PairingPlayer[],
   relax: Relaxation,
   budget: SearchBudget,
+  bracketIndexOf: ReadonlyMap<number, number>,
 ): PairingPair[] | null {
   if (index >= groups.length) return floaters.length === 0 ? [] : null;
 
@@ -403,7 +435,7 @@ function searchBrackets(
       const downSet = new Set(downIndices);
       const stay = bracket.filter((_, i) => !downSet.has(i));
       const stayingFloaters = stay.filter((p) => scoreKey(p) !== residentScore).length;
-      const paired = matchBracket(stay, stayingFloaters, relax);
+      const paired = matchBracket(stay, stayingFloaters, relax, bracketIndexOf);
       if (!paired) continue;
       const tail = searchBrackets(
         groups,
@@ -411,6 +443,7 @@ function searchBrackets(
         downIndices.map((i) => bracket[i]),
         relax,
         budget,
+        bracketIndexOf,
       );
       if (tail) return [...paired, ...tail];
     }
@@ -431,7 +464,13 @@ function pairField(
     if (last && scoreKey(last[0]) === scoreKey(player)) last.push(player);
     else groups.push([player]);
   }
-  return searchBrackets(groups, 0, [], relax, budget);
+  // Which position each score group holds, so "one group apart" is measured
+  // in groups that actually exist and not in points: with groups of 2, 1 and
+  // 0.5, dropping from 2 to 1 is a single step even though it is a whole point.
+  const bracketIndexOf = new Map<number, number>();
+  groups.forEach((group, index) => bracketIndexOf.set(scoreKey(group[0]), index));
+
+  return searchBrackets(groups, 0, [], relax, budget, bracketIndexOf);
 }
 
 // Weights for the whole-field fallback below. Score-group distance dominates
@@ -470,12 +509,20 @@ function matchWholeField(field: PairingPlayer[], relax: Relaxation): PairingPair
     groupHalf.set(key, (groupHalf.get(key) ?? 0) + 1);
   }
   for (const [key, count] of groupHalf) groupHalf.set(key, Math.floor(count / 2));
+  const bracketIndexOf = new Map<number, number>();
+  [...groupHalf.keys()]
+    .sort((a, b) => b - a)
+    .forEach((key, index) => bracketIndexOf.set(key, index));
 
   const edges: Array<[number, number, number]> = [];
   for (let i = 0; i < size; i++) {
     for (let j = i + 1; j < size; j++) {
       const a = sorted[i];
       const b = sorted[j];
+      const span = Math.abs(
+        (bracketIndexOf.get(scoreKey(a)) ?? 0) - (bracketIndexOf.get(scoreKey(b)) ?? 0),
+      );
+      if (span > relax.maxBracketSpan) continue;
       const rematch = a.opponents.has(b.id);
       if (rematch && !relax.rematch) continue;
       const colorOk = colorsCompatible(a, b);
@@ -514,17 +561,37 @@ function matchWholeField(field: PairingPlayer[], relax: Relaxation): PairingPair
 }
 
 /**
- * Board order follows standard Swiss practice: the leading score group sits
- * on board 1, descending from there, so the highest-rated player of the
- * highest score group always plays board 1 and winners keep climbing to the
- * top boards each round.
+ * Board order follows standard Swiss practice: the leading score group sits on
+ * board 1, descending from there, so winners keep climbing to the top boards.
+ *
+ * A board is ranked by the *pair*, not by its best player: first the higher of
+ * the two scores, then the lower. Ranking by the best player alone put a
+ * float like 1-vs-0.5 above a full 1-vs-1 board whenever the floater happened
+ * to outrank both players of the other board — a real complaint from a live
+ * round, where a 0.5/1 board sat on 4 and a 1/1 board on 5. Only once two
+ * boards hold the same pair of scores does rating decide.
  */
 function orderBoards(pairs: PairingPair[], field: PairingPlayer[]): PairingPair[] {
   const rank = new Map<string, number>();
-  [...field].sort(byStandings).forEach((player, i) => rank.set(player.id, i));
-  const bestRank = (pair: PairingPair) =>
-    Math.min(rank.get(pair.white) ?? Infinity, rank.get(pair.black) ?? Infinity);
-  return [...pairs].sort((a, b) => bestRank(a) - bestRank(b));
+  const scoreOf = new Map<string, number>();
+  [...field].sort(byStandings).forEach((player, i) => {
+    rank.set(player.id, i);
+    scoreOf.set(player.id, player.score);
+  });
+  const key = (pair: PairingPair) => {
+    const white = scoreOf.get(pair.white) ?? 0;
+    const black = scoreOf.get(pair.black) ?? 0;
+    return {
+      high: Math.max(white, black),
+      low: Math.min(white, black),
+      rank: Math.min(rank.get(pair.white) ?? Infinity, rank.get(pair.black) ?? Infinity),
+    };
+  };
+  return [...pairs].sort((a, b) => {
+    const x = key(a);
+    const y = key(b);
+    return y.high - x.high || y.low - x.low || x.rank - y.rank;
+  });
 }
 
 /**
@@ -544,6 +611,8 @@ export function generatePairings(players: PairingPlayer[]): PairingResult {
   if (players.length === 1) return { pairs: [], bye: players[0].id };
 
   const needsBye = players.length % 2 === 1;
+  const groupCount = new Set(players.map((p) => scoreKey(p))).size;
+  const relaxations = relaxationLadder(groupCount);
   const byes = byeCandidates(players);
   // Every rule is tried and relaxed against the players who may still take a
   // bye before a second bye is even considered.
@@ -553,7 +622,7 @@ export function generatePairings(players: PairingPlayer[]): PairingResult {
 
   for (const stage of stages) {
     if (stage.length === 0) continue;
-    for (const relax of RELAXATIONS) {
+    for (const relax of relaxations) {
       // One budget per level, shared by every bye candidate: a level that
       // cannot pair this field is abandoned quickly instead of re-running the
       // same hopeless search once per candidate.
