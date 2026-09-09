@@ -957,6 +957,139 @@ describe("generatePairings — flotantes repetidos", () => {
   });
 });
 
+describe("generatePairings — el bye se decide primero y manda", () => {
+  const scoreOf = (field: PairingPlayer[], id: string) => field.find((p) => p.id === id)!.score;
+
+  it("gives the bye to the bottom player even when the top group cannot pair itself", () => {
+    // Los dos punteros ya se enfrentaron, así que su grupo no se puede armar y
+    // alguien tiene que bajar. Sacar del medio a "mid" dejaría el resto más
+    // cómodo, y eso es justo lo que el motor hacía: usaba el bye para
+    // destrabar los primeros tableros. El bye es del último, y los punteros
+    // flotan.
+    const field = [
+      player("topA", 2, { rating: 2000, opponents: new Set(["topB"]) }),
+      player("topB", 2, { rating: 1900, opponents: new Set(["topA"]) }),
+      player("mid", 1, { rating: 1500 }),
+      player("lowHigher", 0, { rating: 1000 }),
+      player("lowLowest", 0, { rating: 900 }),
+    ];
+    const { pairs, bye } = generatePairings(field);
+
+    expect(bye).toBe("lowLowest");
+    // Y nadie del grupo puntero se queda sin jugar.
+    for (const id of ["topA", "topB"]) {
+      expect(opponentOf(pairs, id)).not.toBeNull();
+    }
+    // Los punteros bajaron de grupo en vez de recibir el bye.
+    expect(scoreOf(field, opponentOf(pairs, "topA")!)).toBeLessThan(2);
+    expect(scoreOf(field, opponentOf(pairs, "topB")!)).toBeLessThan(2);
+  });
+
+  it("gives the bye to the bottom player when the top group has a color clash", () => {
+    // Los dos punteros vienen de dos blancas seguidas: los dos deben negras de
+    // forma absoluta, así que no se pueden emparejar entre ellos. Igual que
+    // arriba, la salida es que floten, no que uno se lleve un punto gratis.
+    const field = [
+      player("topA", 2, { rating: 2000, colorHistory: [W, W] }),
+      player("topB", 2, { rating: 1900, colorHistory: [W, W] }),
+      player("mid", 1, { rating: 1500, colorHistory: [B, W] }),
+      player("lowHigher", 0, { rating: 1000, colorHistory: [B, B] }),
+      player("lowLowest", 0, { rating: 900, colorHistory: [W, B] }),
+    ];
+    const { pairs, bye } = generatePairings(field);
+
+    expect(bye).toBe("lowLowest");
+    expect(opponentOf(pairs, "topA")).not.toBeNull();
+    expect(opponentOf(pairs, "topB")).not.toBeNull();
+    // Y no se emparejaron entre ellos, que era lo imposible.
+    expect(paired(pairs, "topA", "topB")).toBe(false);
+  });
+
+  it("never hands the bye to anyone in the leading score group", () => {
+    // Propiedad sobre torneos enteros: el bye jamás puede caer en el grupo de
+    // arriba, pase lo que pase con los emparejamientos.
+    const roll = (() => {
+      let state = 31337;
+      return () => {
+        state = (state * 1103515245 + 12345) % 2147483648;
+        return state / 2147483648;
+      };
+    })();
+
+    for (const count of [9, 11, 13, 15]) {
+      const live = Array.from({ length: count }, (_, i) => ({
+        id: `p${i + 1}`,
+        rating: 2200 - i * 37,
+        score: 0,
+        colorHistory: [] as Color[],
+        opponents: new Set<string>(),
+        hadBye: false,
+        downfloatedLastRound: false,
+      }));
+      const byId = new Map(live.map((p) => [p.id, p]));
+
+      for (let round = 1; round <= 7; round++) {
+        const field: PairingPlayer[] = live.map((p) => ({
+          id: p.id,
+          lastName: p.id,
+          firstName: "",
+          score: p.score,
+          rating: p.rating,
+          colorHistory: p.colorHistory,
+          opponents: p.opponents,
+          hadBye: p.hadBye,
+          hadForfeitWin: false,
+          downfloatedLastRound: p.downfloatedLastRound,
+        }));
+        const { pairs, bye } = generatePairings(field);
+        expect(bye).not.toBeNull();
+
+        const topScore = Math.max(...field.map((p) => p.score));
+        const byeScore = field.find((p) => p.id === bye)!.score;
+        // En la ronda 1 todos están en cero: hay un solo grupo y el bye sale de
+        // ahí por fuerza. En cuanto hay más de un grupo, jamás puede salir del
+        // de arriba.
+        const groups = new Set(field.map((p) => p.score)).size;
+        if (groups > 1) {
+          expect(
+            byeScore,
+            `${count} jugadores, ronda ${round}: bye con ${byeScore} y el puntero tiene ${topScore}`,
+          ).toBeLessThan(topScore);
+        }
+
+        // Y además es el más bajo de los que todavía podían recibirlo.
+        const eligible = field.filter((p) => !p.hadBye);
+        const lowest = Math.min(...eligible.map((p) => p.score));
+        expect(byeScore).toBe(lowest);
+
+        const floated = new Set<string>();
+        for (const pair of pairs) {
+          const white = byId.get(pair.white)!;
+          const black = byId.get(pair.black)!;
+          if (white.score !== black.score) {
+            floated.add(white.score > black.score ? white.id : black.id);
+          }
+          white.opponents.add(black.id);
+          black.opponents.add(white.id);
+          white.colorHistory.push(W);
+          black.colorHistory.push(B);
+          const outcome = roll();
+          if (outcome < 0.45) white.score += 1;
+          else if (outcome < 0.9) black.score += 1;
+          else {
+            white.score += 0.5;
+            black.score += 0.5;
+          }
+        }
+        const rested = byId.get(bye!)!;
+        rested.hadBye = true;
+        rested.score += 1;
+        for (const p of live) p.downfloatedLastRound = floated.has(p.id);
+      }
+    }
+  });
+});
+
 describe("generatePairings — bye y walkover (FIDE C.04.1.d)", () => {
   it("does not give the bye to a player who already won by forfeit", () => {
     // Un W.O. ya le dio un punto sin jugar; el bye le daría un segundo.
