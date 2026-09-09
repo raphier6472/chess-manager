@@ -97,14 +97,21 @@ los grupos se recorren de arriba hacia abajo:
    impar al grupo de abajo y encadenar otro flotante, y así sucesivamente. Si a ese jugador
    ya le tocó bajar en la ronda anterior, baja otro en su lugar: FIDE pide no empujar dos
    veces seguidas al mismo fuera de su grupo. Solo repite si no hay alternativa.
+3. **Un flotante baja un solo grupo.** El emparejamiento se arma primero exigiendo que
+   nadie juegue contra alguien a más de un grupo de distancia; recién si con eso la ronda
+   no tiene solución se permite un grupo más, y así. O sea que la distancia de puntaje
+   siempre es la mínima que el torneo admite: si aparece una diferencia grande es porque
+   los rivales cercanos ya se enfrentaron todos, no porque el algoritmo la haya elegido.
 3. Dentro de cada grupo, la combinación concreta la resuelve un **emparejamiento de peso
    máximo** con el algoritmo de Blossom (`server/pairing/blossom.ts`), la misma técnica que
    usa [Coronate](https://github.com/johnridesabike/coronate): entre todas las
    combinaciones legales elige la que más se parece al plegado ideal. Si un grupo no tiene
    ninguna combinación legal, el algoritmo **retrocede** y prueba bajar a otro jugador.
 
-Las mesas se ordenan por grupo de puntaje y, dentro del grupo, por Elo: el jugador de mayor
-Elo del grupo puntero siempre juega en la mesa 1.
+Las mesas se ordenan por el **grupo de puntaje de la pareja**: primero el más alto de los
+dos puntajes y después el más bajo, así que una mesa de 1-1 va siempre por encima de una de
+1-0.5. Recién a igualdad de los dos puntajes decide el Elo, de modo que el jugador de mayor
+Elo del grupo puntero juega en la mesa 1.
 
 #### Colores
 
@@ -150,9 +157,15 @@ todo a la vez. En ese caso las reglas se ceden **de a una y en este orden**, y s
 después de comprobar que no existe ninguna ronda que las respete:
 
 1. Se cambia a otro jugador elegible para el bye.
-2. Se cede el color, para los menos jugadores posibles.
-3. Se repite un emparejamiento ya jugado.
-4. Solo si todo lo anterior falla, se da un segundo bye.
+2. Se permite que un flotante baje un grupo más (y otro, y otro, siempre el mínimo que
+   haga falta).
+3. Se cede el color, para los menos jugadores posibles.
+4. Se repite un emparejamiento ya jugado.
+5. Solo si todo lo anterior falla, se da un segundo bye.
+
+Los colores van **después** de la distancia de puntaje a propósito: en el sistema holandés
+los límites de color son criterios *absolutos* y la cercanía de puntaje es un criterio de
+*calidad*, así que bajar un grupo más es el precio correcto por no romper un color.
 
 En simulaciones de 780 torneos con formas realistas (de 8 a 60 jugadores, de 4 a 9 rondas)
 **no hace falta ceder nada en ninguno**: cero revanchas, cero byes repetidos y cero

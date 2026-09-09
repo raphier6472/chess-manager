@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import { api, type RoundWithMatches } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { formatPlayerName, type Match, type Player, type StandingsRow } from "../types";
+import { formatPlayerName, type Match, type Player } from "../types";
 import type { TournamentContext } from "./TournamentShell";
 
 const RESULT_OPTIONS: Array<{ value: "white" | "draw" | "black"; label: string }> = [
@@ -31,7 +31,6 @@ export default function RoundPage() {
   const { tournament, reload: reloadTournament } = useOutletContext<TournamentContext>();
   const [rounds, setRounds] = useState<RoundWithMatches[] | null>(null);
   const [players, setPlayers] = useState<Player[] | null>(null);
-  const [standings, setStandings] = useState<StandingsRow[] | null>(null);
   const [viewedNumber, setViewedNumber] = useState<number | null>(null);
   // Separados como en TournamentShell.tsx: loadError bloquea toda la vista (no hay nada
   // que mostrar sin datos), actionError se muestra sin ocultar la ronda que ya está en
@@ -47,11 +46,10 @@ export default function RoundPage() {
 
   const load = () => {
     if (!tournamentId) return;
-    Promise.all([api.listRounds(tournamentId), api.listPlayers(tournamentId), api.getStandings(tournamentId)]).then(
-      ([r, p, s]) => {
+    Promise.all([api.listRounds(tournamentId), api.listPlayers(tournamentId)]).then(
+      ([r, p]) => {
         setRounds(r);
         setPlayers(p);
-        setStandings(s);
         setViewedNumber((current) => current ?? (r.length ? r[r.length - 1].number : null));
       },
       (e) => setLoadError(e.message),
@@ -60,22 +58,56 @@ export default function RoundPage() {
 
   useEffect(load, [tournamentId]);
 
-  const infoOf = useMemo(() => {
-    const scoreById = new Map((standings ?? []).map((s) => [s.playerId, s.score]));
-    const m = new Map<string, BoardPlayer>(
-      (players ?? []).map((p) => [
-        p.id,
-        { name: formatPlayerName(p), rating: p.rating, score: scoreById.get(p.id) ?? 0 },
-      ]),
-    );
-    return (id: string): BoardPlayer => m.get(id) ?? { name: "?", rating: null, score: 0 };
-  }, [players, standings]);
+  /**
+   * Puntaje de cada jugador **antes** de cada ronda.
+   *
+   * Antes esto salía de la tabla de posiciones, que trae el total final del
+   * torneo, así que al mirar una ronda vieja cada jugador aparecía con los
+   * puntos que terminó teniendo y no con los que llevaba cuando se armó esa
+   * mesa: en la ronda 1 todos mostraban su puntaje final en vez de 0. Se
+   * recalcula acumulando las rondas anteriores, que ya están cargadas, así que
+   * no hace falta pedirle nada más al servidor.
+   */
+  const scoresBeforeRound = useMemo(() => {
+    const byRound = new Map<number, Map<string, number>>();
+    const running = new Map<string, number>();
+    const add = (id: string, points: number) => running.set(id, (running.get(id) ?? 0) + points);
+    for (const round of [...(rounds ?? [])].sort((a, b) => a.number - b.number)) {
+      byRound.set(round.number, new Map(running));
+      for (const m of round.matches) {
+        if (m.blackId === null) {
+          add(m.whiteId, 1);
+          continue;
+        }
+        if (m.result === "white") add(m.whiteId, 1);
+        else if (m.result === "black") add(m.blackId, 1);
+        else if (m.result === "draw") {
+          add(m.whiteId, 0.5);
+          add(m.blackId, 0.5);
+        }
+      }
+    }
+    return byRound;
+  }, [rounds]);
 
-  // El error de carga va primero: si alguna de las tres peticiones falla (sesión vencida,
-  // 500 de standings), rounds/players/standings quedan en null para siempre y el return de
-  // abajo dejaba la pestaña en blanco sin mensaje ni forma de reintentar.
+  const infoOf = useMemo(() => {
+    const byId = new Map((players ?? []).map((p) => [p.id, p]));
+    return (id: string, roundNumber: number): BoardPlayer => {
+      const player = byId.get(id);
+      if (!player) return { name: "?", rating: null, score: 0 };
+      return {
+        name: formatPlayerName(player),
+        rating: player.rating,
+        score: scoresBeforeRound.get(roundNumber)?.get(id) ?? 0,
+      };
+    };
+  }, [players, scoresBeforeRound]);
+
+  // El error de carga va primero: si alguna de las peticiones falla (sesión vencida,
+  // por ejemplo), rounds/players quedan en null para siempre y el return de abajo
+  // dejaba la pestaña en blanco sin mensaje ni forma de reintentar.
   if (loadError) return <p className="form-error">{loadError}</p>;
-  if (!rounds || !players || !standings) return null;
+  if (!rounds || !players) return null;
 
   const latest = rounds[rounds.length - 1] ?? null;
   const viewed = rounds.find((r) => r.number === viewedNumber) ?? latest;
@@ -184,8 +216,8 @@ export default function RoundPage() {
                 key={m.id}
                 index={i + 1}
                 match={m}
-                white={infoOf(m.whiteId)}
-                black={m.blackId ? infoOf(m.blackId) : null}
+                white={infoOf(m.whiteId, viewed.number)}
+                black={m.blackId ? infoOf(m.blackId, viewed.number) : null}
                 editable={isOrganizer && isLatest && viewed.status !== "completed"}
                 onSubmit={submitResult}
               />
