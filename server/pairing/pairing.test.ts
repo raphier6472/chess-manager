@@ -7,7 +7,8 @@ import {
   type PairingPlayer,
   type SeedPlayer,
 } from "./pairing";
-import { colorBalance, MAX_COLOR_DIFFERENCE, trailingStreak } from "./colors";
+import { colorBalance, colorsCompatible, MAX_COLOR_DIFFERENCE, trailingStreak } from "./colors";
+import { maxWeightMatching } from "./blossom";
 
 const W: Color = "white";
 const B: Color = "black";
@@ -672,6 +673,203 @@ describe("generatePairings — posiciones apretadas", () => {
     }
     expect(outOfBalance).toBe(0);
     expect(tripleColor).toBe(0);
+  });
+});
+
+describe("generatePairings — cercanía de puntaje", () => {
+  /** Grupos de puntaje presentes, de mayor a menor. */
+  const bracketsOf = (field: PairingPlayer[]) =>
+    [...new Set(field.map((p) => p.score))].sort((a, b) => b - a);
+
+  /** Cuántos grupos separan a los dos jugadores de cada mesa, como máximo. */
+  function widestSpan(field: PairingPlayer[], pairs: PairingPair[], byeId: string | null) {
+    const playing = field.filter((p) => p.id !== byeId);
+    const index = new Map(bracketsOf(playing).map((score, i) => [score, i]));
+    const scoreOf = new Map(field.map((p) => [p.id, p.score]));
+    let widest = 0;
+    for (const pair of pairs) {
+      widest = Math.max(
+        widest,
+        Math.abs(index.get(scoreOf.get(pair.white)!)! - index.get(scoreOf.get(pair.black)!)!),
+      );
+    }
+    return widest;
+  }
+
+  /**
+   * Oráculo independiente: arma el grafo a mano y le pide a Blossom un
+   * emparejamiento de cardinalidad máxima. Si no es perfecto, con ese ancho no
+   * existe ninguna ronda posible — así se distingue un salto obligado de uno
+   * elegido, sin reusar la búsqueda del motor.
+   */
+  function pairableWithin(field: PairingPlayer[], span: number): boolean {
+    if (field.length % 2 === 1) return false;
+    const index = new Map(bracketsOf(field).map((score, i) => [score, i]));
+    const edges: Array<[number, number, number]> = [];
+    for (let i = 0; i < field.length; i++) {
+      for (let j = i + 1; j < field.length; j++) {
+        if (field[i].opponents.has(field[j].id)) continue;
+        if (Math.abs(index.get(field[i].score)! - index.get(field[j].score)!) > span) continue;
+        // Colors are absolute, so a pair the color rules forbid is not an
+        // option the engine could have taken either.
+        if (!colorsCompatible(field[i], field[j])) continue;
+        edges.push([i, j, 1]);
+      }
+    }
+    if (edges.length === 0) return false;
+    return maxWeightMatching(field.length, edges, true).every((mate) => mate >= 0);
+  }
+
+  it("keeps every board inside one score group when the field allows it", () => {
+    // La forma del torneo real que falló: 3 jugadores en 2 puntos, 5 en 1,
+    // 2 en 0.5 y 1 en 0. Producción emparejó a uno de 2 contra uno de 0.5,
+    // saltándose el grupo de 1 entero.
+    const field = [
+      player("a2100", 2, { rating: 2100 }),
+      player("a2000", 2, { rating: 2000 }),
+      player("a1900", 2, { rating: 1900 }),
+      player("b1500", 1, { rating: 1500 }),
+      player("b1300", 1, { rating: 1300 }),
+      player("b1200", 1, { rating: 1200 }),
+      player("b1100", 1, { rating: 1100 }),
+      player("b1000", 1, { rating: 1000 }),
+      player("c900", 0.5, { rating: 900 }),
+      player("c800", 0.5, { rating: 800 }),
+      player("d700", 0, { rating: 700 }),
+    ];
+    const { pairs, bye } = generatePairings(field);
+    expect(widestSpan(field, pairs, bye)).toBe(1);
+    // Y en particular, nadie de 2 puntos se cruza con nadie de 0.5.
+    for (const pair of pairs) {
+      const scores = [field.find((p) => p.id === pair.white)!.score, field.find((p) => p.id === pair.black)!.score];
+      expect(Math.abs(scores[0] - scores[1])).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("widens the gap only when the closer pairing is genuinely impossible", () => {
+    // "top" ya jugó contra el único rival de su grupo vecino, así que bajar un
+    // solo grupo no alcanza y el salto de dos es obligado, no elegido.
+    const field = [
+      player("top", 2, { rating: 2000, opponents: new Set(["next"]) }),
+      player("next", 1.5, { rating: 1900, opponents: new Set(["top"]) }),
+      player("low1", 1, { rating: 1800 }),
+      player("low2", 1, { rating: 1700 }),
+    ];
+    const { pairs, bye } = generatePairings(field);
+    expect(pairableWithin(field, 1)).toBe(false);
+    expect(widestSpan(field, pairs, bye)).toBe(2);
+  });
+
+  it("never uses a wider gap than the field forces, across whole tournaments", () => {
+    // Propiedad, no ejemplo: ronda por ronda se compara el ancho realmente
+    // usado contra el mínimo que el oráculo dice que era posible.
+    const random = (seedValue: number) => {
+      let state = seedValue;
+      return () => {
+        state = (state * 1103515245 + 12345) % 2147483648;
+        return state / 2147483648;
+      };
+    };
+
+    for (const [count, seedValue] of [[11, 7], [12, 99], [16, 4242]] as Array<[number, number]>) {
+      const roll = random(seedValue);
+      const live = Array.from({ length: count }, (_, i) => ({
+        id: `p${i + 1}`,
+        rating: 2200 - i * 37,
+        score: 0,
+        colorHistory: [] as Color[],
+        opponents: new Set<string>(),
+        hadBye: false,
+        downfloatedLastRound: false,
+      }));
+      const byId = new Map(live.map((p) => [p.id, p]));
+
+      for (let round = 1; round <= 6; round++) {
+        const field: PairingPlayer[] = live.map((p) => ({
+          id: p.id,
+          lastName: p.id,
+          firstName: "",
+          score: p.score,
+          rating: p.rating,
+          colorHistory: p.colorHistory,
+          opponents: p.opponents,
+          hadBye: p.hadBye,
+          hadForfeitWin: false,
+          downfloatedLastRound: p.downfloatedLastRound,
+        }));
+        const { pairs, bye } = generatePairings(field);
+        const playing = field.filter((p) => p.id !== bye);
+
+        let minimum = 1;
+        while (minimum < 10 && !pairableWithin(playing, minimum)) minimum++;
+        expect(
+          widestSpan(field, pairs, bye),
+          `${count} jugadores, ronda ${round}`,
+        ).toBeLessThanOrEqual(minimum);
+
+        const floated = new Set<string>();
+        for (const pair of pairs) {
+          const white = byId.get(pair.white)!;
+          const black = byId.get(pair.black)!;
+          if (white.score !== black.score) {
+            floated.add(white.score > black.score ? white.id : black.id);
+          }
+          white.opponents.add(black.id);
+          black.opponents.add(white.id);
+          white.colorHistory.push(W);
+          black.colorHistory.push(B);
+          const outcome = roll();
+          if (outcome < 0.45) white.score += 1;
+          else if (outcome < 0.9) black.score += 1;
+          else {
+            white.score += 0.5;
+            black.score += 0.5;
+          }
+        }
+        if (bye) {
+          const player = byId.get(bye)!;
+          player.hadBye = true;
+          player.score += 1;
+        }
+        for (const p of live) p.downfloatedLastRound = floated.has(p.id);
+      }
+    }
+  });
+});
+
+describe("generatePairings — orden de mesas por grupo", () => {
+  it("puts a full 1-1 board above a 1-0.5 float board", () => {
+    // Regresión de un torneo real: la mesa 4 tenía 1 vs 0.5 y la mesa 5, 1 vs 1.
+    // Acá el que baja es el de mayor Elo del grupo (los otros dos ya jugaron
+    // contra el único rival de abajo), así que ordenar por el mejor jugador de
+    // cada mesa ponía la mesa del flotante primero.
+    const field = [
+      player("top", 1, { rating: 2000 }),
+      player("mid", 1, { rating: 1500, opponents: new Set(["low"]) }),
+      player("bottom", 1, { rating: 1400, opponents: new Set(["low"]) }),
+      player("low", 0.5, { rating: 900, opponents: new Set(["mid", "bottom"]) }),
+    ];
+    const { pairs } = generatePairings(field);
+    expect(paired(pairs, "top", "low")).toBe(true);
+    expect(paired(pairs, "mid", "bottom")).toBe(true);
+    // El grupo manda sobre el Elo: 1-1 antes que 1-0.5.
+    expect([pairs[0].white, pairs[0].black].sort()).toEqual(["bottom", "mid"]);
+    expect([pairs[1].white, pairs[1].black].sort()).toEqual(["low", "top"]);
+  });
+
+  it("orders boards by the higher score first and the lower score next", () => {
+    const field = [
+      player("x2", 2, { rating: 1000 }),
+      player("y2", 2, { rating: 900 }),
+      player("x1", 1, { rating: 2500 }),
+      player("y1", 1, { rating: 2400 }),
+      player("x0", 0, { rating: 2300 }),
+      player("y0", 0, { rating: 2200 }),
+    ];
+    const { pairs } = generatePairings(field);
+    expect([pairs[0].white, pairs[0].black].sort()).toEqual(["x2", "y2"]);
+    expect([pairs[1].white, pairs[1].black].sort()).toEqual(["x1", "y1"]);
+    expect([pairs[2].white, pairs[2].black].sort()).toEqual(["x0", "y0"]);
   });
 });
 
