@@ -257,25 +257,25 @@ function byByePreference(a: PairingPlayer, b: PairingPlayer): number {
 }
 
 /**
- * FIDE C.04.1.d: a player may not receive the pairing-allocated bye if they
- * have already had one, or have already won a game by forfeit because an
- * opponent did not turn up — either way they have already been given a point
- * without playing.
+ * Who sits out, decided on its own and before a single board is paired.
  *
- * Who should get the bye, best candidate first, split by eligibility. Handing
- * a second free point to the same player skews the standings more than any
- * other concession, so the ineligible list is only consulted after every
- * other rule has already been tried and relaxed.
+ * Walking up from the bottom: the lowest score group first, the lowest rating
+ * inside it, and the first player there who has neither had a bye nor won a
+ * game by forfeit (FIDE C.04.1.d — both already handed them a point without
+ * playing). Only if literally nobody is eligible does the same bottom-up order
+ * decide who takes a second one, because somebody has to sit out.
+ *
+ * This is deliberately a *decision*, not a search. It used to be the innermost
+ * loop of the pairing search, which let the engine walk up the list looking for
+ * a bye that made the remaining boards easier — and in a real tournament it
+ * walked all the way to the leader on 4.5/5 while a player on 1.5 was sitting
+ * right there, eligible. A bye is a free point: who gets it can never be traded
+ * against the convenience of the top boards. If the rest of the field is hard
+ * to pair, the answer is to float players down, never to change who sits out.
  */
-function byeCandidates(players: PairingPlayer[]): {
-  eligible: PairingPlayer[];
-  repeat: PairingPlayer[];
-} {
-  const eligibleForBye = (p: PairingPlayer) => !p.hadBye && !p.hadForfeitWin;
-  return {
-    eligible: players.filter(eligibleForBye).sort(byByePreference),
-    repeat: players.filter((p) => !eligibleForBye(p)).sort(byByePreference),
-  };
+function selectBye(players: PairingPlayer[]): PairingPlayer {
+  const bottomUp = [...players].sort(byByePreference);
+  return bottomUp.find((p) => !p.hadBye && !p.hadForfeitWin) ?? bottomUp[0];
 }
 
 /**
@@ -610,43 +610,32 @@ export function generatePairings(players: PairingPlayer[]): PairingResult {
   if (players.length === 0) return { pairs: [], bye: null };
   if (players.length === 1) return { pairs: [], bye: players[0].id };
 
-  const needsBye = players.length % 2 === 1;
-  const groupCount = new Set(players.map((p) => scoreKey(p))).size;
-  const relaxations = relaxationLadder(groupCount);
-  const byes = byeCandidates(players);
-  // Every rule is tried and relaxed against the players who may still take a
-  // bye before a second bye is even considered.
-  const stages: Array<Array<PairingPlayer | null>> = needsBye
-    ? [byes.eligible, byes.repeat]
-    : [[null]];
+  // Step 1 — the bye, settled first and never revisited. Whoever sits out is
+  // taken out of the pool here, so nothing downstream can trade the bye away
+  // to make its own job easier.
+  const byePlayer = players.length % 2 === 1 ? selectBye(players) : null;
+  const field = byePlayer ? players.filter((p) => p.id !== byePlayer.id) : players;
 
-  for (const stage of stages) {
-    if (stage.length === 0) continue;
-    for (const relax of relaxations) {
-      // One budget per level, shared by every bye candidate: a level that
-      // cannot pair this field is abandoned quickly instead of re-running the
-      // same hopeless search once per candidate.
-      const budget: SearchBudget = { attempts: 0 };
-      for (const byePlayer of stage) {
-        const field = byePlayer ? players.filter((p) => p.id !== byePlayer.id) : players;
-        const pairs = pairField(field, relax, budget);
-        if (pairs) return { pairs: orderBoards(pairs, field), bye: byePlayer?.id ?? null };
-      }
-      // The bracket walk found no arrangement at this level. Before giving up
-      // any constraint, ask the whole-field matching whether one exists at all.
-      for (const byePlayer of stage) {
-        const field = byePlayer ? players.filter((p) => p.id !== byePlayer.id) : players;
-        const pairs = matchWholeField(field, relax);
-        if (pairs) return { pairs: orderBoards(pairs, field), bye: byePlayer?.id ?? null };
-      }
-    }
+  // Step 2 — pair everyone who is left, top-down. The score groups are counted
+  // on the remaining field: if the bye emptied the bottom group, that group is
+  // gone and the distances shrink accordingly.
+  const groupCount = new Set(field.map((p) => scoreKey(p))).size;
+  const relaxations = relaxationLadder(groupCount);
+
+  for (const relax of relaxations) {
+    const budget: SearchBudget = { attempts: 0 };
+    const pairs = pairField(field, relax, budget);
+    if (pairs) return { pairs: orderBoards(pairs, field), bye: byePlayer?.id ?? null };
+    // The bracket walk found no arrangement at this level. Before giving up
+    // any constraint, ask the whole-field matching whether one exists at all.
+    const whole = matchWholeField(field, relax);
+    if (whole) return { pairs: orderBoards(whole, field), bye: byePlayer?.id ?? null };
   }
 
   // Unreachable: at the last relaxation every bracket is a complete graph, so
-  // a perfect matching always exists. Kept so a pairing bug can never take a
+  // a perfect matching always exists for an even field — and the field is even,
+  // because the bye was removed above. Kept so a pairing bug can never take a
   // live round down — pair straight down the standings instead.
-  const byePlayer = needsBye ? (byes.eligible[0] ?? byes.repeat[0]) : null;
-  const field = byePlayer ? players.filter((p) => p.id !== byePlayer.id) : players;
   const sorted = [...field].sort(byStandings);
   const pairs: PairingPair[] = [];
   for (let i = 0; i + 1 < sorted.length; i += 2) {

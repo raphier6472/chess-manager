@@ -102,7 +102,7 @@ los grupos se recorren de arriba hacia abajo:
    no tiene solución se permite un grupo más, y así. O sea que la distancia de puntaje
    siempre es la mínima que el torneo admite: si aparece una diferencia grande es porque
    los rivales cercanos ya se enfrentaron todos, no porque el algoritmo la haya elegido.
-3. Dentro de cada grupo, la combinación concreta la resuelve un **emparejamiento de peso
+4. Dentro de cada grupo, la combinación concreta la resuelve un **emparejamiento de peso
    máximo** con el algoritmo de Blossom (`server/pairing/blossom.ts`), la misma técnica que
    usa [Coronate](https://github.com/johnridesabike/coronate): entre todas las
    combinaciones legales elige la que más se parece al plegado ideal. Si un grupo no tiene
@@ -144,11 +144,22 @@ aunque el reglamento permita llegar a 2.
 
 #### Bye
 
+**Se decide antes que nada y no se vuelve a tocar.** Si el número de jugadores activos es
+impar, lo primero que hace el algoritmo es elegir quién descansa y sacarlo del grupo; recién
+después empieza a emparejar al resto de arriba hacia abajo.
+
 - Lo recibe el jugador de **menor Elo del grupo de puntaje más bajo**, y vale 1 punto
-  (C.04.1.c).
+  (C.04.1.c). Se recorre la lista de abajo hacia arriba.
 - Queda excluido quien **ya tuvo un bye** o **ya ganó una partida por incomparecencia**
   (C.04.1.d): en los dos casos ya se llevó un punto sin jugar. Se pasa al siguiente
   elegible, subiendo de grupo si hace falta.
+- **Un jugador del grupo puntero no puede recibir el bye.** Si los primeros tableros no se
+  pueden armar —porque ya se enfrentaron entre ellos o porque los colores no dan— la salida
+  es que esos jugadores **bajen de grupo**, nunca que uno se lleve un punto sin jugar.
+
+Esto último no es un detalle: mientras el bye se elegía *durante* el emparejamiento, el
+algoritmo lo usaba para destrabar los primeros tableros y en un torneo real terminó
+dándoselo al puntero con 4.5 sobre 5 mientras un jugador de 1.5 estaba libre y elegible.
 
 #### Cuando las reglas no se pueden cumplir todas
 
@@ -156,12 +167,14 @@ Con pocos jugadores y muchas rondas puede llegar un punto en que ninguna ronda c
 todo a la vez. En ese caso las reglas se ceden **de a una y en este orden**, y solo
 después de comprobar que no existe ninguna ronda que las respete:
 
-1. Se cambia a otro jugador elegible para el bye.
-2. Se permite que un flotante baje un grupo más (y otro, y otro, siempre el mínimo que
+1. Se permite que un flotante baje un grupo más (y otro, y otro, siempre el mínimo que
    haga falta).
-3. Se cede el color, para los menos jugadores posibles.
-4. Se repite un emparejamiento ya jugado.
-5. Solo si todo lo anterior falla, se da un segundo bye.
+2. Se cede el color, para los menos jugadores posibles.
+3. Se repite un emparejamiento ya jugado.
+
+El bye **no** está en esa lista a propósito: quién descansa ya quedó decidido antes de
+empezar y no se negocia para facilitar los tableros. Lo único que puede mover el bye es que
+no quede nadie elegible, y ahí sí alguien repite.
 
 Los colores van **después** de la distancia de puntaje a propósito: en el sistema holandés
 los límites de color son criterios *absolutos* y la cercanía de puntaje es un criterio de
