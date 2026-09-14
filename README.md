@@ -262,9 +262,17 @@ definen en la unidad de systemd, el gestor de procesos o el perfil del shell.
 
 Estos comandos describen cómo arranca el proceso en el servidor. Para llevar un cambio nuevo
 hasta ahí (build + sincronizar + reiniciar + verificar), usar `./deploy.sh` desde el checkout
-principal, en `main` y sin cambios sin commitear — hace las cuatro cosas en un solo paso y
-compara el bundle que acaba de compilar contra el que producción efectivamente sirve, en vez de
-asumir que el deploy funcionó por un `curl` a `/api/*`.
+principal, en `main`, desde una terminal real de la máquina — hace todo en un solo paso:
+
+- Solo frena si hay cambios sin commitear en archivos **versionados**; los archivos sueltos
+  no lo detienen, porque no viajan.
+- A producción va exactamente lo commiteado (`git archive HEAD`) más `dist/`: nunca un
+  archivo suelto, un `.env` local ni los worktrees de `.claude/`.
+- Si cambió `package-lock.json`, reinstala las dependencias en el servidor **antes** de
+  reiniciar.
+- Verifica dos cosas: que el servidor tenga el `VERSION` del commit recién desplegado (lo
+  que vale para un cambio de backend) y que sirva el bundle recién compilado (lo que vale
+  para uno de frontend). Un `curl` a `/api/*` nunca fue prueba de nada.
 
 ```bash
 npm ci
