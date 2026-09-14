@@ -3,7 +3,7 @@
 # reinicio del servicio y verificación real (compara el hash del bundle que se acaba
 # de compilar contra el que producción efectivamente sirve, no solo un curl a /api).
 #
-# Uso: ejecutar desde el checkout principal (~/Documents/Claude/chess-manager), en main:
+# Uso: ejecutar desde el checkout principal (~/Documents/chess-manager), en main:
 #   ./deploy.sh
 #
 # Requiere: estar en la rama main, sin cambios sin commitear, y la clave dedicada
