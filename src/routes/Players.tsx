@@ -26,6 +26,10 @@ export default function Players() {
   const [editLastName, setEditLastName] = useState("");
   const [editFirstName, setEditFirstName] = useState("");
   const [editRating, setEditRating] = useState("");
+  // Inscripción tardía: cuántas rondas ya se emparejaron (las que se pierde quien se
+  // anota ahora) y cuánto vale cada una: 0, o ½ si pidió un bye de medio punto.
+  const [roundsPaired, setRoundsPaired] = useState(0);
+  const [missedRoundPoints, setMissedRoundPoints] = useState<0 | 0.5>(0);
 
   const load = () => {
     if (!tournamentId) return;
@@ -33,6 +37,10 @@ export default function Players() {
       .listPlayers(tournamentId)
       .then(setPlayers)
       .catch((e) => setError(e.message));
+    api.listRounds(tournamentId).then(
+      (r) => setRoundsPaired(r.length),
+      () => setRoundsPaired(0),
+    );
   };
 
   useEffect(load, [tournamentId]);
@@ -82,16 +90,19 @@ export default function Players() {
     }
     setError(null);
     try {
+      const lateEntry = roundsPaired > 0 ? { missedRoundPoints } : {};
       await api.addPlayer(
         tournamentId,
         selectedRosterId
-          ? { rosterPlayerId: selectedRosterId, rating: rating.trim() ? Number(rating) : null }
+          ? { rosterPlayerId: selectedRosterId, rating: rating.trim() ? Number(rating) : null, ...lateEntry }
           : {
               lastName: lastName.trim(),
               firstName: firstName.trim(),
               rating: rating.trim() ? Number(rating) : null,
+              ...lateEntry,
             },
       );
+      setMissedRoundPoints(0);
       setLastName("");
       setFirstName("");
       setRating("");
@@ -218,6 +229,31 @@ export default function Players() {
               Agregar
             </button>
           </div>
+          {roundsPaired > 0 && (
+            <fieldset className="late-entry">
+              <legend>
+                Inscripción tardía: se pierde {roundsPaired === 1 ? "la ronda 1" : `las rondas 1 a ${roundsPaired}`}
+              </legend>
+              <label>
+                <input
+                  type="radio"
+                  name="missed-round-points"
+                  checked={missedRoundPoints === 0}
+                  onChange={() => setMissedRoundPoints(0)}
+                />
+                0 puntos
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="missed-round-points"
+                  checked={missedRoundPoints === 0.5}
+                  onChange={() => setMissedRoundPoints(0.5)}
+                />
+                ½ punto por ronda (bye pedido)
+              </label>
+            </fieldset>
+          )}
           {selectedRosterId && (
             <p className="hint" style={{ marginTop: "0.35rem" }}>
               Se va a usar la identidad del padrón de {formatPlayerName({ lastName, firstName })}.

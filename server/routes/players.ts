@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { nanoid } from "nanoid";
 import { db } from "../db";
-import type { Player } from "../../shared/types";
+import type { ByeResult, Player } from "../../shared/types";
 import { requireAuth } from "../middleware/auth";
 
 const router = Router();
@@ -59,16 +59,30 @@ router.get("/tournaments/:tournamentId/players", (req, res) => {
 
 router.post("/tournaments/:tournamentId/players", requireAuth, (req, res) => {
   const tournament = db
-    .prepare("SELECT id FROM tournaments WHERE id = ? AND deleted_at IS NULL")
-    .get(req.params.tournamentId);
+    .prepare("SELECT id, status FROM tournaments WHERE id = ? AND deleted_at IS NULL")
+    .get(req.params.tournamentId) as { id: string; status: string } | undefined;
   if (!tournament) return res.status(404).json({ error: "no se encontró el torneo" });
+  if (tournament.status === "completed") {
+    return res.status(409).json({ error: "el torneo ya terminó; no se pueden agregar jugadores" });
+  }
 
-  const { lastName, firstName, rating, rosterPlayerId } = req.body ?? {};
+  const { lastName, firstName, rating, rosterPlayerId, missedRoundPoints } = req.body ?? {};
   const parsedRating = parseRating(rating);
   if ("error" in parsedRating) {
     return res.status(400).json({ error: parsedRating.error });
   }
   const ratingValue = parsedRating.value;
+
+  // Inscripción tardía: por cada ronda ya emparejada que el jugador se perdió queda una
+  // fila sin rival que vale 0 o ½ (bye de medio punto pedido). Sin esto entraba con 0 y
+  // sin historia, como si nunca hubiera faltado. Se valida antes de escribir nada.
+  if (missedRoundPoints !== undefined && missedRoundPoints !== 0 && missedRoundPoints !== 0.5) {
+    return res.status(400).json({ error: "las rondas perdidas valen 0 o ½ punto" });
+  }
+  const missedResult: ByeResult = missedRoundPoints === 0.5 ? "half-bye" : "zero-bye";
+  const missedRounds = db
+    .prepare("SELECT id FROM rounds WHERE tournament_id = ? ORDER BY number")
+    .all(tournament.id) as Array<{ id: string }>;
 
   let lastNameValue: string;
   let firstNameValue: string;
@@ -104,9 +118,17 @@ router.post("/tournaments/:tournamentId/players", requireAuth, (req, res) => {
   }
 
   const id = nanoid();
-  db.prepare(
-    "INSERT INTO players (id, tournament_id, last_name, first_name, rating, withdrawn, roster_player_id) VALUES (?, ?, ?, ?, ?, 0, ?)",
-  ).run(id, req.params.tournamentId, lastNameValue, firstNameValue, ratingValue, rosterId);
+  const insertMissedRound = db.prepare(
+    "INSERT INTO matches (id, round_id, white_id, black_id, result) VALUES (?, ?, ?, NULL, ?)",
+  );
+  db.transaction(() => {
+    db.prepare(
+      "INSERT INTO players (id, tournament_id, last_name, first_name, rating, withdrawn, roster_player_id) VALUES (?, ?, ?, ?, ?, 0, ?)",
+    ).run(id, req.params.tournamentId, lastNameValue, firstNameValue, ratingValue, rosterId);
+    for (const round of missedRounds) {
+      insertMissedRound.run(nanoid(), round.id, id, missedResult);
+    }
+  })();
   const row = db.prepare("SELECT * FROM players WHERE id = ?").get(id) as PlayerRow;
   res.status(201).json(toPlayer(row));
 });
@@ -154,8 +176,14 @@ router.delete("/players/:id", requireAuth, (req, res) => {
   // calcularon con ella. Un jugador agregado por error después de emparejar (o que nunca
   // llegó a jugar) no tiene ese problema y antes quedaba atrapado sin poder sacarlo, solo
   // "retirar" — que lo deja para siempre en la lista con el nombre mal cargado.
+  // Las rondas perdidas de una inscripción tardía (half-bye / zero-bye) no son partidas:
+  // las crea el alta misma, así que no impiden quitar al jugador y se borran con él.
   const hasMatches = db
-    .prepare("SELECT 1 FROM matches WHERE white_id = ? OR black_id = ? LIMIT 1")
+    .prepare(
+      `SELECT 1 FROM matches
+       WHERE (white_id = ? OR black_id = ?) AND result NOT IN ('half-bye', 'zero-bye')
+       LIMIT 1`,
+    )
     .get(player.id, player.id);
   if (hasMatches) {
     return res.status(409).json({
@@ -163,7 +191,10 @@ router.delete("/players/:id", requireAuth, (req, res) => {
     });
   }
 
-  db.prepare("DELETE FROM players WHERE id = ?").run(player.id);
+  db.transaction(() => {
+    db.prepare("DELETE FROM matches WHERE white_id = ? AND black_id IS NULL").run(player.id);
+    db.prepare("DELETE FROM players WHERE id = ?").run(player.id);
+  })();
   res.status(204).end();
 });
 

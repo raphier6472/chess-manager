@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import { api, type RoundWithMatches } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { formatPlayerName, type Match, type Player } from "../types";
+import { byePoints, formatPlayerName, type Match, type Player } from "../types";
 import type { TournamentContext } from "./TournamentShell";
 
 const RESULT_OPTIONS: Array<{ value: "white" | "draw" | "black"; label: string }> = [
@@ -10,6 +10,13 @@ const RESULT_OPTIONS: Array<{ value: "white" | "draw" | "black"; label: string }
   { value: "draw", label: "½-½" },
   { value: "black", label: "0-1" },
 ];
+
+/** Las rondas que se perdió un inscripto tarde se ven distintas del bye por impar. */
+const BYE_LABELS: Partial<Record<Match["result"], string>> = {
+  bye: "bye · 1",
+  "half-bye": "bye pedido · ½",
+  "zero-bye": "no jugó · 0",
+};
 
 /**
  * Línea bajo el nombre en la mesa. Sin Elo se omite el número: "0 · 3 pts" se leía
@@ -76,7 +83,7 @@ export default function RoundPage() {
       byRound.set(round.number, new Map(running));
       for (const m of round.matches) {
         if (m.blackId === null) {
-          add(m.whiteId, 1);
+          add(m.whiteId, byePoints(m.result));
           continue;
         }
         if (m.result === "white") add(m.whiteId, 1);
@@ -305,7 +312,7 @@ function BoardRow({
       <div className="card board-row board-row--bye">
         <span className="board-row__number">{index}</span>
         <span className="board-row__name">{white.name}</span>
-        <span className="board-row__bye-label">bye</span>
+        <span className="board-row__bye-label">{BYE_LABELS[match.result] ?? "bye"}</span>
       </div>
     );
   }

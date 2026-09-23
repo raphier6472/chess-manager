@@ -213,8 +213,10 @@ export function computeTournamentStandings(tournamentId: string): StandingsRow[]
   };
 
   for (const m of matches) {
-    if (m.black_id === null || m.result === "bye") {
-      push(m.white_id, { opponentId: null, result: "bye" });
+    if (m.black_id === null) {
+      // Una fila sin rival es siempre algún tipo de bye; el resultado dice cuánto vale.
+      const result = m.result === "half-bye" || m.result === "zero-bye" ? m.result : "bye";
+      push(m.white_id, { opponentId: null, result });
       continue;
     }
     if (m.result === "draw") {

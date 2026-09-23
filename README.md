@@ -161,6 +161,19 @@ Esto último no es un detalle: mientras el bye se elegía *durante* el emparejam
 algoritmo lo usaba para destrabar los primeros tableros y en un torneo real terminó
 dándoselo al puntero con 4.5 sobre 5 mientras un jugador de 1.5 estaba libre y elegible.
 
+#### Inscripción tardía
+
+Se puede anotar a un jugador con el torneo ya empezado. Por **cada ronda ya emparejada**
+(incluida la que esté en juego) le queda una fila sin rival que el organizador elige al
+anotarlo: **0 puntos** o **½ punto** (bye de medio punto pedido). Así entra en el grupo de
+puntaje que le corresponde para la próxima ronda, y en el historial de la ronda aparece
+"bye pedido · ½" o "no jugó · 0", no una partida.
+
+Esas rondas **no cuentan como "ya tuvo bye"** para C.04.1.d: no fueron el bye del
+emparejamiento, así que el jugador puede recibirlo más adelante si le toca. Tampoco dejan
+color ni rival. Si se lo anotó por error y no jugó ninguna partida, se lo puede quitar y
+sus rondas perdidas se borran con él. Un torneo terminado no admite altas.
+
 #### Cuando las reglas no se pueden cumplir todas
 
 Con pocos jugadores y muchas rondas puede llegar un punto en que ninguna ronda cumpla
@@ -188,11 +201,20 @@ infracciones de color.
 
 La tabla de posiciones ordena por puntos y, ante igualdad, aplica en orden:
 
-1. **Buchholz** — suma de los puntos de todos los rivales enfrentados.
-2. **Sonneborn-Berger** — suma de los puntos de los rivales vencidos, más la mitad de los
+1. **Encuentro directo** — puntos obtenidos solo en las partidas entre los empatados.
+2. **Buchholz** — suma de los puntos de todos los rivales enfrentados.
+3. **Sonneborn-Berger** — suma de los puntos de los rivales vencidos, más la mitad de los
    puntos de aquellos con quienes se empató.
 
-Los *byes* no cuentan como rival para ninguno de los dos desempates.
+El encuentro directo se calcula por grupo de jugadores con **exactamente** el mismo puntaje
+y es estricto: **solo se aplica si todos los del grupo jugaron contra todos los demás**. Si
+falta una sola de esas partidas, no se aplica a nadie del grupo (la columna muestra "–") y
+decide el Buchholz. Con dos empatados es simplemente quién ganó la partida entre ellos; si
+fue tablas siguen empatados. Se aplica una vez: si después de él quedan jugadores iguales,
+decide el Buchholz, no se vuelve a calcular dentro del subgrupo. Una partida ganada por
+incomparecencia cuenta con su resultado.
+
+Los *byes* (de 1, ½ o 0) no cuentan como rival para ningún desempate.
 
 ---
 
@@ -374,9 +396,9 @@ Base: `/api`. Los endpoints marcados con 🔒 exigen sesión de organizador.
 | `GET` | 🔒 `/tournaments-papelera` | Lista los torneos en la papelera. |
 | `POST` | 🔒 `/tournaments/:id/restaurar` | Saca el torneo de la papelera. |
 | `DELETE` | 🔒 `/tournaments/:id/definitivo` | Borra el torneo y todo su contenido. Solo si ya está en la papelera. |
-| `GET` | `/tournaments/:id/standings` | Posiciones con Buchholz y Sonneborn-Berger. |
+| `GET` | `/tournaments/:id/standings` | Posiciones con encuentro directo, Buchholz y Sonneborn-Berger. |
 | `GET` | `/tournaments/:id/players` | Lista de inscritos. |
-| `POST` | 🔒 `/tournaments/:id/players` | Inscribe un jugador. Cuerpo: `{ lastName, firstName?, rating? }`. |
+| `POST` | 🔒 `/tournaments/:id/players` | Inscribe un jugador. Cuerpo: `{ lastName, firstName?, rating?, missedRoundPoints? }`; `missedRoundPoints` (0 o 0.5, por defecto 0) es lo que vale cada ronda ya emparejada que se perdió. |
 | `PATCH` | 🔒 `/players/:id` | Modifica nombre, Elo o estado de retiro. |
 | `DELETE` | 🔒 `/players/:id` | Quita un jugador; solo antes de que empiece el torneo. |
 | `GET` | `/tournaments/:id/rounds` | Rondas con sus mesas. |

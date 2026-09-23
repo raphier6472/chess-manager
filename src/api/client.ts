@@ -52,8 +52,8 @@ export const api = {
   addPlayer: (
     tournamentId: string,
     input:
-      | { lastName: string; firstName?: string; rating?: number | null }
-      | { rosterPlayerId: string; rating?: number | null },
+      | { lastName: string; firstName?: string; rating?: number | null; missedRoundPoints?: 0 | 0.5 }
+      | { rosterPlayerId: string; rating?: number | null; missedRoundPoints?: 0 | 0.5 },
   ) =>
     request<Player>(`/tournaments/${tournamentId}/players`, {
       method: "POST",

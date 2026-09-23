@@ -1,4 +1,30 @@
-export type MatchResult = "white" | "black" | "draw" | "bye" | "unplayed";
+/**
+ * Resultado de una mesa. Las tres variantes de bye son filas sin rival (blackId null):
+ * - "bye": el bye que asigna el emparejamiento (número impar) o el organizador; 1 punto.
+ * - "half-bye": bye de medio punto pedido, hoy usado para las rondas que se perdió
+ *   un jugador inscripto tarde.
+ * - "zero-bye": ronda no jugada que vale 0 (inscripción tardía sin medio punto).
+ * Solo "bye" cuenta como el bye del emparejamiento (FIDE C.04.1.d): los otros dos no
+ * impiden que el jugador reciba más adelante el bye por número impar.
+ */
+export type MatchResult =
+  | "white"
+  | "black"
+  | "draw"
+  | "bye"
+  | "half-bye"
+  | "zero-bye"
+  | "unplayed";
+
+/** Resultados de una fila sin rival. */
+export type ByeResult = "bye" | "half-bye" | "zero-bye";
+
+/** Puntos que da una fila sin rival, según qué tipo de bye es. */
+export function byePoints(result: string): number {
+  if (result === "half-bye") return 0.5;
+  if (result === "zero-bye") return 0;
+  return 1;
+}
 
 export type TournamentStatus = "setup" | "active" | "completed";
 
@@ -103,4 +129,10 @@ export interface StandingsRow {
   score: number;
   buchholz: number;
   sonnebornBerger: number;
+  /**
+   * Encuentro directo (primer desempate): puntos obtenidos solo contra los demás
+   * empatados en el mismo puntaje. null cuando no aplica: el jugador no está empatado
+   * con nadie, o no todos los empatados jugaron entre sí.
+   */
+  directEncounter: number | null;
 }
