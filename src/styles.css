@@ -918,6 +918,30 @@ table.data td input:focus {
   font-size: 0.9rem;
 }
 
+/* Inscripción tardía: cuánto valen las rondas que se perdió el jugador. */
+.late-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.late-entry legend {
+  width: 100%;
+  margin-bottom: 0.35rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+.late-entry label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
 .round-banner {
   display: flex;
   align-items: center;

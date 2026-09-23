@@ -1166,3 +1166,218 @@ describe("headers de seguridad", () => {
     expect(res.headers["x-powered-by"]).toBeUndefined();
   });
 });
+
+describe("inscripción tardía", () => {
+  type Agent = ReturnType<typeof request.agent>;
+  interface M {
+    id: string;
+    whiteId: string;
+    blackId: string | null;
+    result: string;
+  }
+
+  /** Torneo de 3 rondas con 4 jugadores con Elo, ronda 1 emparejada y sin resultados. */
+  async function withRoundOne(agent: Agent, name: string) {
+    const t = await agent.post("/api/tournaments").send({ name, date: "2026-09-23", numRounds: 3 });
+    const tournamentId = t.body.id as string;
+    for (const [lastName, rating] of [
+      ["Uno", 2400],
+      ["Dos", 2300],
+      ["Tres", 2200],
+      ["Cuatro", 2100],
+    ] as const) {
+      await agent.post(`/api/tournaments/${tournamentId}/players`).send({ lastName, rating });
+    }
+    const round = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    return { tournamentId, round1: round.body as { id: string; matches: M[] } };
+  }
+
+  /** Blancas ganan todo lo que queda sin resultado, y se cierra la ronda. */
+  async function whiteWinsAndClose(agent: Agent, round: { id: string; matches: M[] }) {
+    for (const m of round.matches) {
+      if (m.blackId) await agent.post(`/api/matches/${m.id}/result`).send({ result: "white" });
+    }
+    expect((await agent.post(`/api/rounds/${round.id}/complete`)).status).toBe(200);
+  }
+
+  it("con ½ punto: queda un bye pedido en la ronda perdida, suma ½ y empareja en su grupo", async () => {
+    const agent = await organizer();
+    const { tournamentId, round1 } = await withRoundOne(agent, "Tardío medio punto");
+
+    // Se anota con la ronda 1 ya emparejada (todavía en juego). Con el Elo más alto a
+    // propósito: si la ronda perdida le contara 1 punto para emparejar, encabezaría el
+    // grupo de 1 y jugaría contra un ganador en vez de bajar.
+    const late = await agent
+      .post(`/api/tournaments/${tournamentId}/players`)
+      .send({ lastName: "Tarde", rating: 2500, missedRoundPoints: 0.5 });
+    expect(late.status).toBe(201);
+    const lateId = late.body.id as string;
+
+    // La historia muestra el bye pedido en la ronda 1, no una partida.
+    const rounds = (await request(app).get(`/api/tournaments/${tournamentId}/rounds`)).body;
+    const lateRows = rounds[0].matches.filter((m: M) => m.whiteId === lateId);
+    expect(lateRows).toEqual([expect.objectContaining({ blackId: null, result: "half-bye" })]);
+
+    // Una fila de bye ya tiene resultado: no frena el cierre de la ronda.
+    await whiteWinsAndClose(agent, round1);
+    const standings = (await request(app).get(`/api/tournaments/${tournamentId}/standings`)).body;
+    expect(standings.find((r: { playerId: string }) => r.playerId === lateId).score).toBe(0.5);
+
+    // Ronda 2: dos con 1, el tardío con ½, dos con 0. El bye (número impar) va abajo de
+    // todo, a un jugador con 0, y el tardío juega contra el otro jugador con 0: sale de su
+    // propio grupo de ½ (está solo) hacia el de abajo, no al de 1 ni al bye.
+    const round2 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    expect(round2.status).toBe(201);
+    const scores = new Map<string, number>(
+      standings.map((r: { playerId: string; score: number }) => [r.playerId, r.score]),
+    );
+    const lateGame = (round2.body.matches as M[]).find(
+      (m) => m.whiteId === lateId || m.blackId === lateId,
+    )!;
+    expect(lateGame.blackId).not.toBeNull();
+    const opponent = lateGame.whiteId === lateId ? lateGame.blackId! : lateGame.whiteId;
+    expect(scores.get(opponent)).toBe(0);
+    const bye = (round2.body.matches as M[]).find((m) => m.blackId === null)!;
+    expect(scores.get(bye.whiteId)).toBe(0);
+  });
+
+  it("con 0 puntos: la ronda perdida no cuenta como bye y puede recibir el bye por impar", async () => {
+    const agent = await organizer();
+    const { tournamentId, round1 } = await withRoundOne(agent, "Tardío cero");
+    await whiteWinsAndClose(agent, round1);
+
+    // Con la ronda 1 ya cerrada; el Elo más bajo del torneo, así que en la ronda 2 es el
+    // primero en la fila del bye entre los que tienen 0.
+    const late = await agent
+      .post(`/api/tournaments/${tournamentId}/players`)
+      .send({ lastName: "Tarde", rating: 1500, missedRoundPoints: 0 });
+    expect(late.status).toBe(201);
+    const lateId = late.body.id as string;
+
+    const rounds = (await request(app).get(`/api/tournaments/${tournamentId}/rounds`)).body;
+    expect(rounds[0].matches.filter((m: M) => m.whiteId === lateId)).toEqual([
+      expect.objectContaining({ blackId: null, result: "zero-bye" }),
+    ]);
+    const standings = (await request(app).get(`/api/tournaments/${tournamentId}/standings`)).body;
+    expect(standings.find((r: { playerId: string }) => r.playerId === lateId).score).toBe(0);
+
+    // Si la ronda no jugada contara como "ya tuvo bye" (C.04.1.d), el bye saltaría a
+    // otro jugador con 0.
+    const round2 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    const bye = (round2.body.matches as M[]).find((m) => m.blackId === null)!;
+    expect(bye).toMatchObject({ whiteId: lateId, result: "bye" });
+  });
+
+  it("se pierde todas las rondas ya emparejadas, no solo la última", async () => {
+    const agent = await organizer();
+    const { tournamentId, round1 } = await withRoundOne(agent, "Tardío dos rondas");
+    await whiteWinsAndClose(agent, round1);
+    const round2 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    await whiteWinsAndClose(agent, round2.body);
+
+    const late = await agent
+      .post(`/api/tournaments/${tournamentId}/players`)
+      .send({ lastName: "Tarde", missedRoundPoints: 0.5 });
+    const rounds = (await request(app).get(`/api/tournaments/${tournamentId}/rounds`)).body;
+    for (const r of rounds) {
+      expect(r.matches.filter((m: M) => m.whiteId === late.body.id)).toEqual([
+        expect.objectContaining({ result: "half-bye" }),
+      ]);
+    }
+    const standings = (await request(app).get(`/api/tournaments/${tournamentId}/standings`)).body;
+    expect(standings.find((r: { playerId: string }) => r.playerId === late.body.id).score).toBe(1);
+  });
+
+  it("antes de la ronda 1 no deja ninguna fila, aunque mande missedRoundPoints", async () => {
+    const agent = await organizer();
+    const tournamentId = await seedTournament(agent, "Tardío sin rondas");
+    const p = await agent
+      .post(`/api/tournaments/${tournamentId}/players`)
+      .send({ lastName: "Temprano", missedRoundPoints: 0.5 });
+    expect(p.status).toBe(201);
+    const round = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    // 3 jugadores: el recién anotado juega o recibe el bye normal, nunca un half-bye.
+    expect((round.body.matches as M[]).some((m) => m.result === "half-bye")).toBe(false);
+  });
+
+  it("valida el valor y rechaza agregar jugadores a un torneo terminado", async () => {
+    const agent = await organizer();
+    const { tournamentId } = await withRoundOne(agent, "Tardío validación");
+    const bad = await agent
+      .post(`/api/tournaments/${tournamentId}/players`)
+      .send({ lastName: "Tarde", missedRoundPoints: 1 });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toContain("0 o ½");
+    // No quedó nada a medias: ni el jugador ni una fila de bye.
+    const players = (await request(app).get(`/api/tournaments/${tournamentId}/players`)).body;
+    expect(players.some((p: { lastName: string }) => p.lastName === "Tarde")).toBe(false);
+
+    const doneId = await seedTournament(agent, "Tardío terminado");
+    const rnd = await agent.post(`/api/tournaments/${doneId}/rounds/generate`);
+    await whiteWinsAndClose(agent, rnd.body);
+    const late = await agent.post(`/api/tournaments/${doneId}/players`).send({ lastName: "Tarde" });
+    expect(late.status).toBe(409);
+  });
+
+  it("un tardío sin partidas jugadas se puede quitar, y se lleva sus rondas perdidas", async () => {
+    const agent = await organizer();
+    const { tournamentId } = await withRoundOne(agent, "Tardío quitar");
+    const late = await agent
+      .post(`/api/tournaments/${tournamentId}/players`)
+      .send({ lastName: "Tarde", missedRoundPoints: 0.5 });
+    expect((await agent.delete(`/api/players/${late.body.id}`)).status).toBe(204);
+    const rounds = (await request(app).get(`/api/tournaments/${tournamentId}/rounds`)).body;
+    expect(rounds[0].matches.some((m: M) => m.whiteId === late.body.id)).toBe(false);
+  });
+});
+
+describe("encuentro directo en la tabla", () => {
+  it("GET /standings expone el encuentro directo por grupo de puntaje", async () => {
+    // El orden en sí está cubierto en server/scoring/tiebreaks.test.ts; esto comprueba
+    // que llega por la API con el torneo real de 2 rondas y 4 jugadores.
+    const agent = await organizer();
+    const t = await agent
+      .post("/api/tournaments")
+      .send({ name: "Encuentro directo", date: "2026-09-23", numRounds: 2 });
+    const tournamentId = t.body.id as string;
+    for (const [lastName, rating] of [
+      ["Uno", 2400],
+      ["Dos", 2300],
+      ["Tres", 2200],
+      ["Cuatro", 2100],
+    ] as const) {
+      await agent.post(`/api/tournaments/${tournamentId}/players`).send({ lastName, rating });
+    }
+    const r1 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    for (const m of r1.body.matches) {
+      await agent.post(`/api/matches/${m.id}/result`).send({ result: "white" });
+    }
+    await agent.post(`/api/rounds/${r1.body.id}/complete`);
+    // R2: los dos ganadores se enfrentan; gana negras. Los dos perdedores empatan.
+    const r2 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    const standings1 = (await request(app).get(`/api/tournaments/${tournamentId}/standings`)).body;
+    const score1 = new Map(standings1.map((r: { playerId: string; score: number }) => [r.playerId, r.score]));
+    let winnersGame: { whiteId: string; blackId: string } | null = null;
+    for (const m of r2.body.matches) {
+      const top = score1.get(m.whiteId) === 1;
+      if (top) winnersGame = m;
+      await agent.post(`/api/matches/${m.id}/result`).send({ result: top ? "black" : "draw" });
+    }
+    await agent.post(`/api/rounds/${r2.body.id}/complete`);
+
+    // Final: el ganador de la mesa de ganadores 2, su rival 1 (solos en su puntaje: sin
+    // encuentro directo), y los dos perdedores de la ronda 1 empatados en ½ tras
+    // enfrentarse y hacer tablas: encuentro directo ½ cada uno, no separa.
+    const rows = (await request(app).get(`/api/tournaments/${tournamentId}/standings`)).body as Array<{
+      playerId: string;
+      score: number;
+      directEncounter: number | null;
+    }>;
+    const byId = new Map(rows.map((r) => [r.playerId, r]));
+    expect(byId.get(winnersGame!.blackId)).toMatchObject({ score: 2, directEncounter: null });
+    expect(byId.get(winnersGame!.whiteId)).toMatchObject({ score: 1, directEncounter: null });
+    const halves = rows.filter((r) => r.score === 0.5);
+    expect(halves).toHaveLength(2);
+    expect(halves.every((r) => r.directEncounter === 0.5)).toBe(true);
+  });
+});

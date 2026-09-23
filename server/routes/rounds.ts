@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { nanoid } from "nanoid";
 import { db } from "../db";
-import type { Match, Round } from "../../shared/types";
+import { byePoints, type Match, type Round } from "../../shared/types";
 import {
   generateInitialPairings,
   generatePairings,
@@ -183,8 +183,11 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
 
       for (const m of roundMatches) {
         if (m.black_id === null) {
-          if (hadByeOf.has(m.white_id)) hadByeOf.set(m.white_id, true);
-          addScore(m.white_id, 1);
+          // Solo el bye de 1 punto es "el bye" del emparejamiento (C.04.1.d). Las rondas
+          // que se perdió un inscripto tarde (half-bye / zero-bye) suman lo que valen
+          // pero no le quitan la posibilidad de recibir más adelante el bye por impar.
+          if (m.result === "bye" && hadByeOf.has(m.white_id)) hadByeOf.set(m.white_id, true);
+          addScore(m.white_id, byePoints(m.result));
           continue;
         }
         // Being paired counts even when the game was not played, so the two

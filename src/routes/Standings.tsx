@@ -48,6 +48,9 @@ export default function Standings() {
               <th className="num">#</th>
               <th>Jugador</th>
               <th className="num">Puntos</th>
+              <th className="num" title="Encuentro directo: puntos obtenidos solo contra los demás empatados. Se aplica si todos los empatados jugaron entre sí.">
+                Enc. directo
+              </th>
               <th className="num">Buchholz</th>
               <th className="num">Sonneborn-Berger</th>
             </tr>
@@ -58,6 +61,7 @@ export default function Standings() {
                 <td className="num">{i + 1}</td>
                 <td className="name">{r.name}</td>
                 <td className="num">{r.score}</td>
+                <td className="num">{r.directEncounter ?? "–"}</td>
                 <td className="num">{r.buchholz}</td>
                 <td className="num">{r.sonnebornBerger}</td>
               </tr>
