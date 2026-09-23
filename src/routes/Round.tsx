@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
-import { api, type RoundWithMatches } from "../api/client";
+import { api, type ManualBye, type RoundWithMatches } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { byePoints, formatPlayerName, type Match, type Player } from "../types";
 import type { TournamentContext } from "./TournamentShell";
@@ -49,7 +49,8 @@ export default function RoundPage() {
   // Bye manual: jugadores que el organizador saca a propósito del próximo emparejamiento
   // (avisaron que no juegan esa ronda), en vez de depender del bye automático que solo
   // sale cuando el número de activos es impar.
-  const [manualByeIds, setManualByeIds] = useState<string[]>([]);
+  // Como en FIDE vale ½ (bye pedido, el caso normal: avisó) o 0, nunca el punto entero.
+  const [manualByes, setManualByes] = useState<ManualBye[]>([]);
 
   const load = () => {
     if (!tournamentId) return;
@@ -128,9 +129,9 @@ export default function RoundPage() {
     setActionError(null);
     setBusy(true);
     try {
-      const round = await api.generateRound(tournamentId, manualByeIds);
+      const round = await api.generateRound(tournamentId, manualByes);
       setViewedNumber(round.number);
-      setManualByeIds([]);
+      setManualByes([]);
       load();
       reloadTournament();
     } catch (err) {
@@ -141,9 +142,15 @@ export default function RoundPage() {
   };
 
   const toggleManualBye = (playerId: string) => {
-    setManualByeIds((current) =>
-      current.includes(playerId) ? current.filter((id) => id !== playerId) : [...current, playerId],
+    setManualByes((current) =>
+      current.some((b) => b.playerId === playerId)
+        ? current.filter((b) => b.playerId !== playerId)
+        : [...current, { playerId, points: 0.5 }],
     );
+  };
+
+  const setManualByePoints = (playerId: string, points: 0 | 0.5) => {
+    setManualByes((current) => current.map((b) => (b.playerId === playerId ? { ...b, points } : b)));
   };
 
   const submitResult = async (matchId: string, result: "white" | "draw" | "black", forfeit = false) => {
@@ -267,22 +274,42 @@ export default function RoundPage() {
               <div className="stack" style={{ marginTop: "0.5rem" }}>
                 {players
                   .filter((p) => !p.withdrawn)
-                  .map((p) => (
-                    <label key={p.id} className="bye-picker__option">
-                      <input
-                        type="checkbox"
-                        checked={manualByeIds.includes(p.id)}
-                        onChange={() => toggleManualBye(p.id)}
-                      />
-                      {formatPlayerName(p)}
-                    </label>
-                  ))}
+                  .map((p) => {
+                    const selected = manualByes.find((b) => b.playerId === p.id);
+                    return (
+                      <div key={p.id} className="bye-picker__row">
+                        <label className="bye-picker__option">
+                          <input
+                            type="checkbox"
+                            checked={!!selected}
+                            onChange={() => toggleManualBye(p.id)}
+                          />
+                          {formatPlayerName(p)}
+                        </label>
+                        {selected && (
+                          <div className="bye-picker__points" role="radiogroup" aria-label={`Puntos para ${formatPlayerName(p)}`}>
+                            {([0.5, 0] as const).map((points) => (
+                              <label key={points}>
+                                <input
+                                  type="radio"
+                                  name={`bye-points-${p.id}`}
+                                  checked={selected.points === points}
+                                  onChange={() => setManualByePoints(p.id, points)}
+                                />
+                                {points === 0.5 ? "½ punto" : "0 puntos"}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             </details>
           )}
           <button type="button" className="btn btn--felt" disabled={busy} onClick={generate}>
             Emparejar ronda {rounds.length + 1}
-            {manualByeIds.length > 0 && ` (${manualByeIds.length} con bye manual)`}
+            {manualByes.length > 0 && ` (${manualByes.length} con bye manual)`}
           </button>
         </div>
       )}
