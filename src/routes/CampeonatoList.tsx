@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import type { LeagueSummary } from "../types";
+import LeagueNameEditor from "./LeagueNameEditor";
 
 export default function CampeonatoList() {
+  const { isOrganizer } = useAuth();
   const [leagues, setLeagues] = useState<LeagueSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -44,6 +48,24 @@ export default function CampeonatoList() {
                   </div>
                 </div>
               </Link>
+              {isOrganizer && (
+                <div style={{ padding: "0 0.9rem 0.75rem" }}>
+                  {editingId === l.id ? (
+                    <LeagueNameEditor
+                      league={l}
+                      onSaved={(league) => {
+                        setLeagues(leagues.map((x) => (x.id === league.id ? { ...x, name: league.name } : x)));
+                        setEditingId(null);
+                      }}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  ) : (
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditingId(l.id)}>
+                      Editar
+                    </button>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>

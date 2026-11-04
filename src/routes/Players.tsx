@@ -270,6 +270,7 @@ export default function Players() {
           <table className="data">
             <thead>
               <tr>
+                <th className="num">#</th>
                 <th>Apellido</th>
                 <th>Nombre</th>
                 <th className="num">Elo</th>
@@ -279,10 +280,11 @@ export default function Players() {
               </tr>
             </thead>
             <tbody>
-              {players.map((p) => {
+              {players.map((p, i) => {
                 const isEditing = editingId === p.id;
                 return (
                   <tr key={p.id} style={p.withdrawn && !isEditing ? { opacity: 0.5 } : undefined}>
+                    <td className="num">{i + 1}</td>
                     <td>
                       {isEditing ? (
                         <input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} autoFocus />

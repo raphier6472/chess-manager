@@ -1072,6 +1072,71 @@ describe("campeonato anual", () => {
   });
 });
 
+describe("renombrar liga", () => {
+  it("corrige el nombre sin tocar sus torneos ni el campeonato", async () => {
+    const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Renombrar kohl" });
+    const leagueId = liga.body.id as string;
+    const t = await agent
+      .post("/api/tournaments")
+      .send({ name: "Torneo de la liga", date: "2026-01-01", numRounds: 1, leagueId });
+    const tournamentId = t.body.id as string;
+    for (const lastName of ["Alfa", "Beta"]) {
+      await agent.post(`/api/tournaments/${tournamentId}/players`).send({ lastName });
+    }
+    const round = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    await agent.post(`/api/matches/${round.body.matches[0].id}/result`).send({ result: "white" });
+    await agent.post(`/api/rounds/${round.body.id}/complete`);
+    const before = (await request(app).get(`/api/campeonato?leagueId=${leagueId}`)).body;
+
+    const res = await agent.patch(`/api/leagues/${leagueId}`).send({ name: "  Renombrar Khol  " });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ id: leagueId, name: "Renombrar Khol" });
+
+    // El torneo sigue en la misma liga y ve el nombre nuevo.
+    const torneo = (await request(app).get(`/api/tournaments/${tournamentId}`)).body;
+    expect(torneo).toMatchObject({ leagueId, leagueName: "Renombrar Khol" });
+
+    // La tabla acumulada es la misma, solo cambia el nombre.
+    const after = (await request(app).get(`/api/campeonato?leagueId=${leagueId}`)).body;
+    expect(after).toEqual({ ...before, leagueName: "Renombrar Khol" });
+
+    const lista = (await request(app).get("/api/ligas")).body as Array<{ id: string; name: string; tournamentCount: number }>;
+    expect(lista.find((l) => l.id === leagueId)).toMatchObject({ name: "Renombrar Khol", tournamentCount: 1 });
+  });
+
+  it("no deja usar el nombre de otra liga, pero sí cambiar mayúsculas de la misma", async () => {
+    const agent = await organizer();
+    await agent.post("/api/leagues").send({ name: "Duplicada Uno" });
+    const otra = await agent.post("/api/leagues").send({ name: "duplicada dos" });
+
+    const dup = await agent.patch(`/api/leagues/${otra.body.id}`).send({ name: "DUPLICADA UNO" });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error).toContain("otra liga");
+
+    const mayusculas = await agent.patch(`/api/leagues/${otra.body.id}`).send({ name: "Duplicada Dos" });
+    expect(mayusculas.status).toBe(200);
+    expect(mayusculas.body.name).toBe("Duplicada Dos");
+  });
+
+  it("rechaza un nombre vacío o inválido, sin cambiar nada", async () => {
+    const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Nombre intacto" });
+    for (const body of [{ name: "   " }, { name: 123 }, {}]) {
+      expect((await agent.patch(`/api/leagues/${liga.body.id}`).send(body)).status).toBe(400);
+    }
+    const ligas = (await agent.get("/api/leagues")).body as Array<{ id: string; name: string }>;
+    expect(ligas.find((l) => l.id === liga.body.id)?.name).toBe("Nombre intacto");
+  });
+
+  it("exige sesión de organizador y responde 404 si la liga no existe", async () => {
+    const agent = await organizer();
+    const liga = await agent.post("/api/leagues").send({ name: "Protegida" });
+    expect((await request(app).patch(`/api/leagues/${liga.body.id}`).send({ name: "Hackeada" })).status).toBe(401);
+    expect((await agent.patch("/api/leagues/no-existe").send({ name: "Da igual" })).status).toBe(404);
+  });
+});
+
 describe("marcar liga de un torneo", () => {
   it("PATCH /tournaments/:id asocia por leagueId y limpia con leagueId null", async () => {
     const agent = await organizer();

@@ -357,6 +357,22 @@ button {
   font-size: 1.5rem;
 }
 
+.league-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.league-name-editor {
+  width: min(32rem, 100%);
+}
+
+.league-name-editor__actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 0.7rem;

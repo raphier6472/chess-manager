@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { ChampionshipBoard, Tournament } from "../types";
+import LeagueNameEditor from "./LeagueNameEditor";
 
 const STATUS_LABEL: Record<Tournament["status"], string> = {
   setup: "sin empezar",
@@ -15,6 +16,7 @@ export default function CampeonatoDashboard() {
   const { leagueId } = useParams<{ leagueId: string }>();
   const [board, setBoard] = useState<ChampionshipBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
 
   useEffect(() => {
     if (!leagueId) return;
@@ -44,7 +46,25 @@ export default function CampeonatoDashboard() {
           <p className="eyebrow">
             <Link to="/campeonato">Campeonatos</Link> · suma de puntos entre torneos
           </p>
-          <h1>{board.leagueName}</h1>
+          {editingName ? (
+            <LeagueNameEditor
+              league={{ id: board.leagueId, name: board.leagueName }}
+              onSaved={(league) => {
+                setBoard({ ...board, leagueName: league.name });
+                setEditingName(false);
+              }}
+              onCancel={() => setEditingName(false)}
+            />
+          ) : (
+            <div className="league-title">
+              <h1>{board.leagueName}</h1>
+              {isOrganizer && (
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditingName(true)}>
+                  Editar
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {isOrganizer && (
           <Link to={`/?leagueId=${board.leagueId}`} className="btn btn--primary">

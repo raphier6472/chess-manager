@@ -48,6 +48,8 @@ La interfaz está en español.
 - Enviar un torneo a la **papelera** en cualquier estado, y restaurarlo después. Borrar un
   torneo por accidente perdería un evento entero, así que el borrado normal es reversible;
   eliminarlo de verdad exige entrar a la papelera y confirmarlo por separado.
+- Corregir el nombre de una liga con "Editar" en Campeonatos. Los torneos apuntan a la liga por
+  su id, así que no se pierde ninguna relación. No se puede usar el nombre de otra liga.
 
 **Para el público (sin necesidad de entrar)**
 
@@ -400,6 +402,7 @@ Base: `/api`. Los endpoints marcados con 🔒 exigen sesión de organizador.
 | `GET` | `/tournaments` | Lista los torneos. |
 | `POST` | 🔒 `/tournaments` | Crea un torneo. Cuerpo: `{ name, date, numRounds }`. |
 | `GET` | `/tournaments/:id` | Datos de un torneo. |
+| `PATCH` | 🔒 `/leagues/:id` | Renombra una liga. Cuerpo: `{ name }`. Responde 409 si otra liga ya tiene ese nombre. |
 | `DELETE` | 🔒 `/tournaments/:id` | Envía el torneo a la papelera (reversible). |
 | `GET` | 🔒 `/tournaments-papelera` | Lista los torneos en la papelera. |
 | `POST` | 🔒 `/tournaments/:id/restaurar` | Saca el torneo de la papelera. |
