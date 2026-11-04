@@ -51,6 +51,35 @@ router.post("/leagues", requireAuth, (req, res) => {
 });
 
 /**
+ * Renombra una liga, para corregir un error de tipeo. Los torneos la referencian por
+ * tournaments.league_id, así que alcanza con esta fila: todas las vistas leen el nombre
+ * por JOIN. No deja usar el nombre de OTRA liga (sin distinguir mayúsculas) porque dos
+ * ligas iguales ya partieron un campeonato en dos una vez (ver POST /leagues); corregir
+ * mayúsculas de la misma liga ("kohl" -> "Kohl") sí se puede.
+ */
+router.patch("/leagues/:id", requireAuth, (req, res) => {
+  const row = db.prepare("SELECT id FROM leagues WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "no se encontró esa liga" });
+
+  const { name } = req.body ?? {};
+  if (typeof name !== "string" || !name.trim()) {
+    return res.status(400).json({ error: "el nombre de la liga es obligatorio" });
+  }
+  const newName = name.trim();
+
+  const others = db
+    .prepare("SELECT name FROM leagues WHERE id != ?")
+    .all(req.params.id) as Array<{ name: string }>;
+  if (others.some((l) => l.name.toLowerCase() === newName.toLowerCase())) {
+    return res.status(409).json({ error: "ya existe otra liga con ese nombre" });
+  }
+
+  db.prepare("UPDATE leagues SET name = ? WHERE id = ?").run(newName, req.params.id);
+  const updated = db.prepare("SELECT * FROM leagues WHERE id = ?").get(req.params.id) as LeagueRow;
+  res.json(toLeague(updated));
+});
+
+/**
  * Borra una liga. Solo si ningún torneo la referencia (activo o en la papelera): la
  * columna tournaments.league_id tiene REFERENCES leagues(id) con foreign_keys ON, así
  * que borrar una liga todavía en uso rompería esa restricción a nivel de SQLite (un
