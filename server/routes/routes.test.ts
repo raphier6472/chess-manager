@@ -702,6 +702,97 @@ describe("bye manual", () => {
   });
 });
 
+describe("bye manual como en FIDE (½ o 0)", () => {
+  interface M {
+    id: string;
+    whiteId: string;
+    blackId: string | null;
+    result: string;
+  }
+
+  async function fourPlayers(name: string) {
+    const agent = await organizer();
+    const t = await agent.post("/api/tournaments").send({ name, date: "2026-09-23", numRounds: 3 });
+    const tournamentId = t.body.id as string;
+    const ids: string[] = [];
+    for (const [lastName, rating] of [
+      ["A", 2400],
+      ["B", 2300],
+      ["C", 2200],
+      ["D", 2100],
+      ["E", 2000],
+    ] as const) {
+      const p = await agent.post(`/api/tournaments/${tournamentId}/players`).send({ lastName, rating });
+      ids.push(p.body.id);
+    }
+    return { agent, tournamentId, ids };
+  }
+
+  it("guarda ½ o 0 según lo elegido, y ninguno vale el punto entero", async () => {
+    const { agent, tournamentId, ids } = await fourPlayers("Bye manual FIDE");
+    const r1 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`).send({
+      manualByes: [
+        { playerId: ids[0], points: 0.5 },
+        { playerId: ids[1], points: 0 },
+      ],
+    });
+    expect(r1.status).toBe(201);
+    const rows = r1.body.matches as M[];
+    expect(rows.find((m) => m.whiteId === ids[0])).toMatchObject({ blackId: null, result: "half-bye" });
+    expect(rows.find((m) => m.whiteId === ids[1])).toMatchObject({ blackId: null, result: "zero-bye" });
+    // Quedan C, D, E (impar): uno recibe el bye automático de 1 punto.
+    expect(rows.filter((m) => m.result === "bye")).toHaveLength(1);
+
+    for (const m of rows) {
+      if (m.blackId) await agent.post(`/api/matches/${m.id}/result`).send({ result: "white" });
+    }
+    await agent.post(`/api/rounds/${r1.body.id}/complete`);
+    const standings = (await request(app).get(`/api/tournaments/${tournamentId}/standings`)).body;
+    const score = (id: string) => standings.find((r: { playerId: string }) => r.playerId === id).score;
+    expect(score(ids[0])).toBe(0.5);
+    expect(score(ids[1])).toBe(0);
+  });
+
+  it("un bye manual no le quita el bye por impar más adelante (C.04.1.d)", async () => {
+    // 5 jugadores. R1: E (el de menor Elo) pide bye de 0; A-D juegan, ganan blancas.
+    // R2: E queda solo en 0 con el Elo más bajo -> le toca el bye por impar. Si el bye
+    // manual contara como "ya tuvo bye", pasaría a otro.
+    const { agent, tournamentId, ids } = await fourPlayers("Bye manual y bye por impar");
+    const r1 = await agent
+      .post(`/api/tournaments/${tournamentId}/rounds/generate`)
+      .send({ manualByes: [{ playerId: ids[4], points: 0 }] });
+    for (const m of r1.body.matches as M[]) {
+      if (m.blackId) await agent.post(`/api/matches/${m.id}/result`).send({ result: "white" });
+    }
+    await agent.post(`/api/rounds/${r1.body.id}/complete`);
+    const r2 = await agent.post(`/api/tournaments/${tournamentId}/rounds/generate`);
+    const bye = (r2.body.matches as M[]).find((m) => m.blackId === null)!;
+    expect(bye).toMatchObject({ whiteId: ids[4], result: "bye" });
+  });
+
+  it("rechaza un valor que no sea 0 o ½, sin crear la ronda", async () => {
+    const { agent, tournamentId, ids } = await fourPlayers("Bye manual inválido");
+    for (const points of [1, "0.5", null]) {
+      const res = await agent
+        .post(`/api/tournaments/${tournamentId}/rounds/generate`)
+        .send({ manualByes: [{ playerId: ids[0], points }] });
+      expect(res.status).toBe(400);
+    }
+    const rounds = (await request(app).get(`/api/tournaments/${tournamentId}/rounds`)).body;
+    expect(rounds).toHaveLength(0);
+  });
+
+  it("el formato viejo byePlayerIds sigue funcionando y vale ½", async () => {
+    const { agent, tournamentId, ids } = await fourPlayers("Bye manual formato viejo");
+    const r1 = await agent
+      .post(`/api/tournaments/${tournamentId}/rounds/generate`)
+      .send({ byePlayerIds: [ids[2]] });
+    expect((r1.body.matches as M[]).find((m) => m.whiteId === ids[2])).toMatchObject({
+      result: "half-bye",
+    });
+  });
+});
+
 describe("forfeit / W.O.", () => {
   it("da el punto completo al presente y lo marca como forfeit", async () => {
     const agent = await organizer();

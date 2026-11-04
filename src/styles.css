@@ -789,6 +789,13 @@ table.data td input:focus {
 /* Narrow screens: the result-picker doesn't leave enough room for both
    names in one row, so stack number+white / picker / black into 3 rows. */
 @media (max-width: 480px) {
+  /* Bye rows keep one line, but without the empty 4th column (it only exists to line
+     the label up with the result pickers on desktop): the name gets all the room and
+     the label ("bye pedido · ½") sits at the right edge. */
+  .board-row--bye {
+    grid-template-columns: 2.2rem minmax(0, 1fr) auto;
+  }
+
   .board-row:not(.board-row--bye) {
     grid-template-columns: 2.2rem 1fr;
     grid-template-rows: auto auto auto;
@@ -940,6 +947,26 @@ table.data td input:focus {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.9rem;
+}
+
+.bye-picker__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+}
+
+.bye-picker__points {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.bye-picker__points label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .round-banner {

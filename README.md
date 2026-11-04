@@ -161,6 +161,14 @@ Esto último no es un detalle: mientras el bye se elegía *durante* el emparejam
 algoritmo lo usaba para destrabar los primeros tableros y en un torneo real terminó
 dándoselo al puntero con 4.5 sobre 5 mientras un jugador de 1.5 estaba libre y elegible.
 
+#### Bye manual (ausencia avisada)
+
+Antes de emparejar, el organizador puede sacar de la ronda a quien avisó que no juega. Como
+en FIDE, eso **no** es el bye por número impar: vale **½ punto** (bye pedido, la opción por
+defecto) o **0**, a elección para cada jugador. No cuenta como "ya tuvo bye" (C.04.1.d), así
+que más adelante puede recibir el bye por impar si le toca. Los byes manuales cargados
+antes de este cambio valían 1 punto y se quedan así; no se reescribe la historia.
+
 #### Inscripción tardía
 
 Se puede anotar a un jugador con el torneo ya empezado. Por **cada ronda ya emparejada**
@@ -402,7 +410,7 @@ Base: `/api`. Los endpoints marcados con 🔒 exigen sesión de organizador.
 | `PATCH` | 🔒 `/players/:id` | Modifica nombre, Elo o estado de retiro. |
 | `DELETE` | 🔒 `/players/:id` | Quita un jugador; solo antes de que empiece el torneo. |
 | `GET` | `/tournaments/:id/rounds` | Rondas con sus mesas. |
-| `POST` | 🔒 `/tournaments/:id/rounds/generate` | Genera los emparejamientos de la ronda siguiente. |
+| `POST` | 🔒 `/tournaments/:id/rounds/generate` | Genera los emparejamientos de la ronda siguiente. Cuerpo opcional: `{ manualByes: [{ playerId, points: 0 \| 0.5 }] }` (el formato viejo `byePlayerIds` vale ½). |
 | `POST` | 🔒 `/matches/:id/result` | Carga un resultado. Cuerpo: `{ result: "white" \| "black" \| "draw" }`. |
 | `POST` | 🔒 `/rounds/:id/complete` | Cierra la ronda. |
 | `POST` | 🔒 `/rounds/:id/reopen` | Reabre la última ronda cerrada para corregir un resultado. |

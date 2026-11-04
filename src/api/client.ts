@@ -10,6 +10,12 @@ import type {
   Tournament,
 } from "../types";
 
+/** Jugador que el organizador saca de la ronda: bye pedido de ½ o ausencia de 0. */
+export interface ManualBye {
+  playerId: string;
+  points: 0 | 0.5;
+}
+
 export interface RoundWithMatches extends Round {
   matches: Match[];
 }
@@ -68,10 +74,10 @@ export const api = {
 
   listRounds: (tournamentId: string) =>
     request<RoundWithMatches[]>(`/tournaments/${tournamentId}/rounds`),
-  generateRound: (tournamentId: string, byePlayerIds: string[] = []) =>
+  generateRound: (tournamentId: string, manualByes: ManualBye[] = []) =>
     request<RoundWithMatches>(`/tournaments/${tournamentId}/rounds/generate`, {
       method: "POST",
-      body: JSON.stringify({ byePlayerIds }),
+      body: JSON.stringify({ manualByes }),
     }),
   submitResult: (matchId: string, result: "white" | "black" | "draw", forfeit = false) =>
     request<Match>(`/matches/${matchId}/result`, {

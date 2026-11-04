@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { nanoid } from "nanoid";
 import { db } from "../db";
-import { byePoints, type Match, type Round } from "../../shared/types";
+import { byePoints, type ByeResult, type Match, type Round } from "../../shared/types";
 import {
   generateInitialPairings,
   generatePairings,
@@ -94,10 +94,30 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
   // Bye manual: el organizador puede sacar de antemano a uno o varios jugadores del
   // emparejamiento de esta ronda (avisaron que no juegan) en vez de esperar a que les
   // toque el bye automático por ser un número impar de activos.
+  // Como en FIDE, una ausencia pedida vale ½ (bye pedido) o 0, nunca el punto entero del
+  // bye por impar, y no cuenta como "ya tuvo bye" (C.04.1.d). Formato:
+  // manualByes: [{ playerId, points: 0 | 0.5 }]. El formato viejo byePlayerIds (lista de
+  // ids) se sigue aceptando como ½, por si queda abierta una pestaña con la página anterior.
+  const rawManualByes: unknown = req.body?.manualByes;
   const rawByeIds: unknown = req.body?.byePlayerIds;
-  const manualByeIds = Array.isArray(rawByeIds)
-    ? [...new Set(rawByeIds.filter((id): id is string => typeof id === "string"))]
-    : [];
+  const manualByePoints = new Map<string, ByeResult>();
+  if (Array.isArray(rawManualByes)) {
+    for (const entry of rawManualByes) {
+      const playerId = (entry as { playerId?: unknown })?.playerId;
+      const points = (entry as { points?: unknown })?.points;
+      if (typeof playerId !== "string" || (points !== 0 && points !== 0.5)) {
+        return res
+          .status(400)
+          .json({ error: "cada bye manual necesita un jugador y un valor de 0 o ½ punto" });
+      }
+      manualByePoints.set(playerId, points === 0.5 ? "half-bye" : "zero-bye");
+    }
+  } else if (Array.isArray(rawByeIds)) {
+    for (const id of rawByeIds) {
+      if (typeof id === "string") manualByePoints.set(id, "half-bye");
+    }
+  }
+  const manualByeIds = [...manualByePoints.keys()];
   const activeIds = new Set(players.map((p) => p.id));
   if (manualByeIds.some((id) => !activeIds.has(id))) {
     return res.status(400).json({ error: "el bye manual solo se puede dar a jugadores activos del torneo" });
@@ -247,16 +267,16 @@ router.post("/tournaments/:tournamentId/rounds/generate", requireAuth, (req, res
 
   // El bye automático (número impar de jugadores emparejables) y los byes manuales
   // nunca se pisan: los manuales ya quedaron afuera del algoritmo de emparejamiento.
-  const byeIds = new Set(manualByeIds);
-  if (bye) byeIds.add(bye);
+  const byeRows = new Map<string, ByeResult>(manualByePoints);
+  if (bye) byeRows.set(bye, "bye");
 
   const tx = db.transaction(() => {
     insertRound.run(roundId, tournamentId, roundNumber);
     for (const pair of pairs) {
       insertMatch.run(nanoid(), roundId, pair.white, pair.black, "unplayed");
     }
-    for (const id of byeIds) {
-      insertMatch.run(nanoid(), roundId, id, null, "bye");
+    for (const [id, result] of byeRows) {
+      insertMatch.run(nanoid(), roundId, id, null, result);
     }
     setTournamentActive.run(tournamentId);
   });

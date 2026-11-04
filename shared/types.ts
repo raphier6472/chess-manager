@@ -1,9 +1,10 @@
 /**
  * Resultado de una mesa. Las tres variantes de bye son filas sin rival (blackId null):
- * - "bye": el bye que asigna el emparejamiento (número impar) o el organizador; 1 punto.
- * - "half-bye": bye de medio punto pedido, hoy usado para las rondas que se perdió
- *   un jugador inscripto tarde.
- * - "zero-bye": ronda no jugada que vale 0 (inscripción tardía sin medio punto).
+ * - "bye": el bye que asigna el emparejamiento por número impar; 1 punto.
+ * - "half-bye": bye de medio punto pedido: bye manual de ½ o ronda que se perdió un
+ *   inscripto tarde.
+ * - "zero-bye": ronda no jugada que vale 0: bye manual de 0 o inscripción tardía sin ½.
+ * (Los byes manuales guardados antes de este cambio quedaron como "bye" de 1 punto.)
  * Solo "bye" cuenta como el bye del emparejamiento (FIDE C.04.1.d): los otros dos no
  * impiden que el jugador reciba más adelante el bye por número impar.
  */
